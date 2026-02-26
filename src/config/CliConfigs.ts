@@ -25,6 +25,11 @@ export const CLI_BACKENDS: Record<CliType, CliBackendConfig> = {
     protocol: 'acp',
     authRequired: true,
     acpArgs: DEFAULT_ACP_ARGS,
+    modes: [
+      { id: 'default', label: 'Default' },
+      { id: 'autoEdit', label: 'Auto-Accept Edits' },
+      { id: 'yolo', label: 'YOLO' },
+    ],
   },
   claude: {
     id: 'claude',
@@ -33,6 +38,11 @@ export const CLI_BACKENDS: Record<CliType, CliBackendConfig> = {
     protocol: 'acp',
     authRequired: true,
     npxPackage: '@zed-industries/claude-agent-acp@0.18.0',
+    modes: [
+      { id: 'default', label: 'Default' },
+      { id: 'plan', label: 'Plan' },
+      { id: 'bypassPermissions', label: 'YOLO' },
+    ],
   },
   codex: {
     id: 'codex',
@@ -42,6 +52,11 @@ export const CLI_BACKENDS: Record<CliType, CliBackendConfig> = {
     authRequired: true,
     npxPackage: '@zed-industries/codex-acp@0.9.4',
     mcpCommand: ['mcp-server'],
+    modes: [
+      { id: 'default', label: 'Plan' },
+      { id: 'autoEdit', label: 'Auto Edit' },
+      { id: 'yolo', label: 'Full Auto' },
+    ],
   },
   opencode: {
     id: 'opencode',
@@ -50,6 +65,10 @@ export const CLI_BACKENDS: Record<CliType, CliBackendConfig> = {
     protocol: 'acp',
     authRequired: false,
     acpArgs: ['acp'],
+    modes: [
+      { id: 'build', label: 'Build' },
+      { id: 'plan', label: 'Plan' },
+    ],
   },
 };
 

@@ -9,6 +9,7 @@ import type {
   ProtocolType,
   UnifiedClientOptions,
   CliDetectionResult,
+  AgentMode,
 } from '../types/config.js';
 import type {
   AcpSessionNewResult,
@@ -31,6 +32,7 @@ import { CliDetector } from '../detector/CliDetector.js';
 import {
   createSpawnConfig,
   createCodexMcpSpawnConfig,
+  getBackendConfig,
 } from '../config/CliConfigs.js';
 import { cleanEnvironment } from '../utils/env.js';
 
@@ -292,18 +294,37 @@ export class UnifiedAgentClient extends EventEmitter {
   }
 
   /**
+   * 에이전트 모드를 설정합니다 (ACP 모드).
+   * CLI별 지원 모드: OpenCode(build/plan), Claude(default/plan/bypassPermissions) 등.
+   *
+   * @param mode - 모드 ID (e.g., 'build', 'plan', 'bypassPermissions')
+   */
+  async setMode(mode: string): Promise<void> {
+    if (this.activeProtocol !== 'acp' || !this.acpConnection || !this.sessionId) {
+      throw new Error('ACP 모드에서만 에이전트 모드를 설정할 수 있습니다');
+    }
+    return this.acpConnection.setMode(this.sessionId, mode);
+  }
+
+  /**
    * YOLO 모드를 설정합니다 (ACP 모드).
+   * setMode()의 편의 래퍼입니다.
    *
    * @param enabled - 활성화 여부
    */
   async setYoloMode(enabled: boolean): Promise<void> {
-    if (this.activeProtocol !== 'acp' || !this.acpConnection || !this.sessionId) {
-      throw new Error('ACP 모드에서만 YOLO 모드를 설정할 수 있습니다');
-    }
-    return this.acpConnection.setMode(
-      this.sessionId,
-      enabled ? 'bypassPermissions' : 'default',
-    );
+    return this.setMode(enabled ? 'bypassPermissions' : 'default');
+  }
+
+  /**
+   * 현재 CLI에서 사용 가능한 에이전트 모드 목록을 반환합니다.
+   *
+   * @returns 모드 목록 (모드 미지원 시 빈 배열)
+   */
+  getAvailableModes(): AgentMode[] {
+    if (!this.activeCli) return [];
+    const config = getBackendConfig(this.activeCli);
+    return config.modes ?? [];
   }
 
   /**

@@ -8,6 +8,16 @@ export type CliType = 'gemini' | 'claude' | 'codex' | 'opencode';
 /** 통신 프로토콜 */
 export type ProtocolType = 'acp' | 'mcp';
 
+/** 에이전트 모드 옵션 */
+export interface AgentMode {
+  /** 모드 ID (session/set_mode에 전달되는 값) */
+  id: string;
+  /** 표시 라벨 */
+  label: string;
+  /** 설명 (선택) */
+  description?: string;
+}
+
 /** CLI 스폰 설정 */
 export interface CliSpawnConfig {
   /** 실행 커맨드 (e.g., 'gemini', 'npx', 'opencode') */
@@ -36,6 +46,8 @@ export interface CliBackendConfig {
   npxPackage?: string;
   /** MCP 서버 커맨드 (MCP 프로토콜인 경우) */
   mcpCommand?: string[];
+  /** 사용 가능한 에이전트 모드 목록 (session/set_mode 지원 시) */
+  modes?: AgentMode[];
 }
 
 /** 연결 옵션 */

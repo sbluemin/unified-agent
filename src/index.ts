@@ -91,6 +91,7 @@ export type {
   // 설정
   CliType,
   ProtocolType,
+  AgentMode,
   CliSpawnConfig,
   CliBackendConfig,
   ConnectionOptions,
