@@ -360,7 +360,7 @@ describe('AcpConnection', () => {
   });
 
   describe('setMode', () => {
-    it('session/set_config_option으로 모드를 설정해야 합니다', async () => {
+    it('session/set_mode 요청을 보내야 합니다', async () => {
       (connection as any).child = mock.child;
       (connection as any).setState('ready');
 
@@ -369,10 +369,9 @@ describe('AcpConnection', () => {
       await new Promise((r) => setTimeout(r, 50));
 
       const sent = JSON.parse(mock.stdin.written[0].replace('\n', ''));
-      expect(sent.method).toBe('session/set_config_option');
+      expect(sent.method).toBe('session/set_mode');
       expect(sent.params.sessionId).toBe('session-1');
-      expect(sent.params.configId).toBe('mode');
-      expect(sent.params.value).toBe('bypassPermissions');
+      expect(sent.params.modeId).toBe('bypassPermissions');
 
       // handleMessage를 직접 호출하여 응답 처리
       (connection as any).handleMessage({

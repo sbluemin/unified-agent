@@ -93,22 +93,16 @@ export interface AcpSessionPromptParams {
   prompt: AcpContentBlock[];
 }
 
-/**
- * 세션 모드 설정 파라미터
- * @deprecated session/set_config_option (configId: 'mode')을 사용하세요
- */
+/** 세션 모드 설정 파라미터 */
 export interface AcpSessionSetModeParams {
   sessionId: string;
   modeId: string;
 }
 
-/**
- * 세션 모델 설정 파라미터
- * @deprecated session/set_config_option (configId: 'model')을 사용하세요
- */
+/** 세션 모델 설정 파라미터 */
 export interface AcpSessionSetModelParams {
   sessionId: string;
-  model: string;
+  modelId: string;
 }
 
 /** 세션 설정 옵션 변경 파라미터 (공식 ACP 스키마) */

@@ -12,6 +12,7 @@ import type {
   AcpPermissionRequestParams,
   AcpSessionNewResult,
   AcpSessionPromptParams,
+  AcpSessionSetModeParams,
   AcpSessionSetConfigParams,
   AcpSessionUpdateParams,
   AcpFileReadParams,
@@ -125,7 +126,7 @@ export class AcpConnection extends BaseConnection {
 
   /**
    * YOLO 모드(자동 승인)를 설정합니다.
-   * 내부적으로 ACP 표준 session/set_config_option을 사용합니다.
+   * session/set_mode RPC를 사용합니다.
    *
    * @param sessionId - 세션 ID
    * @param mode - 모드 ('bypassPermissions' | 'default')
@@ -134,18 +135,32 @@ export class AcpConnection extends BaseConnection {
     sessionId: string,
     mode: string = 'bypassPermissions',
   ): Promise<void> {
-    return this.setConfigOption(sessionId, 'mode', mode);
+    const params: AcpSessionSetModeParams = { sessionId, modeId: mode };
+    return this.sendRequest(
+      'session/set_mode',
+      params as unknown as Record<string, unknown>,
+    );
   }
 
   /**
    * 모델을 변경합니다.
-   * 내부적으로 ACP 표준 session/set_config_option을 사용합니다.
+   * session/set_model (primary) → session/set_config_option (fallback)
+   * AionUi 구현과 동일한 전략을 사용합니다.
    *
    * @param sessionId - 세션 ID
    * @param model - 모델 이름
    */
   async setModel(sessionId: string, model: string): Promise<void> {
-    return this.setConfigOption(sessionId, 'model', model);
+    try {
+      // Primary: session/set_model (파라미터: modelId)
+      await this.sendRequest(
+        'session/set_model',
+        { sessionId, modelId: model } as unknown as Record<string, unknown>,
+      );
+    } catch {
+      // Fallback: session/set_config_option
+      await this.setConfigOption(sessionId, 'model', model);
+    }
   }
 
   /**
