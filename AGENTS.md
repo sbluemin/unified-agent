@@ -99,7 +99,7 @@ npm run build
 | Gemini | ACP | `gemini --experimental-acp` | ❌ | ❌ |
 | Claude | ACP (npx bridge) | `npx @zed-industries/claude-agent-acp@0.18.0` | ✅ | ✅ |
 | Codex | ACP (npx bridge) | `npx @zed-industries/codex-acp@0.9.4` | ✅ | ✅ |
-| OpenCode | ACP | `opencode acp` | ❌ | ✅ |
+| OpenCode | ACP | `opencode acp` | ✅ | ✅ |
 
 ## 아키텍처 의사결정
 
