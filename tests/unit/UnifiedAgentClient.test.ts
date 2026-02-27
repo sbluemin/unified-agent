@@ -67,4 +67,15 @@ describe('UnifiedAgentClient 인스턴스', () => {
     const client = new UnifiedAgentClient();
     await expect(client.disconnect()).resolves.not.toThrow();
   });
+
+  it('연결 전 getAvailableModels는 null을 반환해야 합니다', () => {
+    const client = new UnifiedAgentClient();
+    expect(client.getAvailableModels()).toBeNull();
+  });
+
+  it('disconnect 후 getAvailableModels는 null을 반환해야 합니다', async () => {
+    const client = new UnifiedAgentClient();
+    await client.disconnect();
+    expect(client.getAvailableModels()).toBeNull();
+  });
 });

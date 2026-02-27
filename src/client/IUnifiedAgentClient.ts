@@ -80,6 +80,26 @@ export interface ConnectionInfo {
   state: ConnectionState;
 }
 
+// ─── 모델 정보 ────────────────────────────────────────────
+
+/** 사용 가능한 모델 정보 */
+export interface ModelInfo {
+  /** 모델 고유 식별자 (session/set_model에 전달되는 값) */
+  modelId: string;
+  /** 사람이 읽을 수 있는 모델 이름 */
+  name: string;
+  /** 모델 설명 (선택) */
+  description?: string | null;
+}
+
+/** 사용 가능한 모델 목록 결과 */
+export interface AvailableModelsResult {
+  /** 사용 가능한 모델 목록 */
+  availableModels: ModelInfo[];
+  /** 현재 선택된 모델 ID */
+  currentModelId: string;
+}
+
 // ─── 클라이언트 인터페이스 ──────────────────────────────────
 
 /**
@@ -152,4 +172,14 @@ export interface IUnifiedAgentClient {
    * @returns 모드 목록 (모드 미지원 시 빈 배열)
    */
   getAvailableModes(): AgentMode[];
+
+  // ─── 모델 조회 ──────────────────────────────────────────
+
+  /**
+   * 현재 CLI에서 사용 가능한 모델 목록을 반환합니다.
+   * session/new 응답의 models 필드에서 가져옵니다.
+   *
+   * @returns 모델 목록 및 현재 모델 (models 미지원 CLI인 경우 null)
+   */
+  getAvailableModels(): AvailableModelsResult | null;
 }

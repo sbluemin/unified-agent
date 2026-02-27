@@ -32,6 +32,9 @@ export type {
   SessionConfigOption as AcpConfigOption,
   SessionMode as AcpSessionMode,
   StopReason as AcpStopReason,
+  SessionModelState as AcpSessionModelState,
+  ModelInfo as AcpModelInfo,
+  ModelId as AcpModelId,
 } from '@agentclientprotocol/sdk';
 
 // 공식 SDK의 주요 클래스/함수 re-export

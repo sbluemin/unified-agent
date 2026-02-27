@@ -24,6 +24,7 @@ import type {
   IUnifiedAgentClient,
   ConnectResult,
   ConnectionInfo,
+  AvailableModelsResult,
 } from './IUnifiedAgentClient.js';
 import { AcpConnection } from '../connection/AcpConnection.js';
 import { CliDetector } from '../detector/CliDetector.js';
@@ -34,7 +35,8 @@ import {
 import { cleanEnvironment } from '../utils/env.js';
 
 // 인터페이스 파일에서 타입 re-export
-export type { UnifiedClientEvents, ConnectResult, ConnectionInfo, IUnifiedAgentClient } from './IUnifiedAgentClient.js';
+export type { UnifiedClientEvents, ConnectResult, ConnectionInfo, AvailableModelsResult, IUnifiedAgentClient } from './IUnifiedAgentClient.js';
+export type { ModelInfo } from './IUnifiedAgentClient.js';
 
 /**
  * 통합 에이전트 클라이언트.
@@ -44,6 +46,8 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
   private acpConnection: AcpConnection | null = null;
   private activeCli: CliType | null = null;
   private sessionId: string | null = null;
+  /** session/new 응답에서 캐싱된 모델 상태 */
+  private cachedModels: AvailableModelsResult | null = null;
   private detector = new CliDetector();
 
   /**
@@ -122,6 +126,18 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
     this.activeCli = cli;
     this.sessionId = session.sessionId;
 
+    // session/new 응답에서 모델 정보 캐싱
+    if (session.models) {
+      this.cachedModels = {
+        availableModels: session.models.availableModels.map((m) => ({
+          modelId: m.modelId,
+          name: m.name,
+          description: m.description,
+        })),
+        currentModelId: session.models.currentModelId,
+      };
+    }
+
     return {
       cli,
       protocol: 'acp',
@@ -190,6 +206,16 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
   }
 
   /**
+   * 현재 CLI에서 사용 가능한 모델 목록을 반환합니다.
+   * session/new 응답의 models 필드에서 가져옵니다.
+   *
+   * @returns 모델 목록 및 현재 모델 (models 미지원 CLI인 경우 null)
+   */
+  getAvailableModels(): AvailableModelsResult | null {
+    return this.cachedModels;
+  }
+
+  /**
    * 사용 가능한 CLI 목록을 감지합니다.
    */
   async detectClis(): Promise<CliDetectionResult[]> {
@@ -224,6 +250,7 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
 
     this.activeCli = null;
     this.sessionId = null;
+    this.cachedModels = null;
   }
 
   /**

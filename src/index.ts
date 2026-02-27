@@ -20,6 +20,8 @@ export {
   type UnifiedClientEvents,
   type ConnectResult,
   type ConnectionInfo,
+  type AvailableModelsResult,
+  type ModelInfo,
   type IUnifiedAgentClient,
 } from './client/UnifiedAgentClient.js';
 
@@ -88,6 +90,9 @@ export type {
   AcpConfigOption,
   AcpSessionMode,
   AcpStopReason,
+  AcpSessionModelState,
+  AcpModelInfo,
+  AcpModelId,
   AcpEvents,
 } from './types/acp.js';
 
