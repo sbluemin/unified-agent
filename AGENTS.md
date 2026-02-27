@@ -2,7 +2,7 @@
 
 ## 프로젝트 개요
 
-Gemini CLI, Claude Code, Codex CLI, OpenCode CLI를 ACP/MCP 프로토콜로 통합하는 zero-dependency TypeScript SDK.
+Gemini CLI, Claude Code, Codex CLI, OpenCode CLI를 ACP 프로토콜로 통합하는 zero-dependency TypeScript SDK.
 
 ## 기술 스택
 
@@ -20,12 +20,10 @@ src/
 ├── types/
 │   ├── common.ts               # JSON-RPC 2.0 기본 타입
 │   ├── acp.ts                  # ACP 프로토콜 타입 (공식 스키마 기반)
-│   ├── mcp.ts                  # MCP 프로토콜 타입
 │   └── config.ts               # CLI 설정/감지 타입
 ├── connection/
 │   ├── BaseConnection.ts       # 추상 기반 (spawn + JSON-RPC stdio)
-│   ├── AcpConnection.ts        # ACP 프로토콜 구현
-│   └── McpConnection.ts        # Codex MCP 직접 통합
+│   └── AcpConnection.ts        # ACP 프로토콜 구현
 ├── client/
 │   └── UnifiedAgentClient.ts   # 통합 클라이언트 (최상위 API)
 ├── detector/
@@ -103,7 +101,7 @@ npm run build
 
 ## 아키텍처 의사결정
 
-1. **Protocol Abstraction**: ACP/MCP를 `UnifiedAgentClient`로 추상화. 사용자는 프로토콜을 알 필요 없음.
+1. **ACP 단일 프로토콜**: 모든 CLI를 ACP 프로토콜로 통합. `UnifiedAgentClient`로 추상화.
 2. **Config-driven**: CLI 차이는 `CliConfigs.ts`의 설정으로 관리. 코드 분기 최소화.
 3. **Event-driven Streaming**: `EventEmitter` 기반 실시간 응답 처리 (`messageChunk`, `toolCall` 등).
 4. **Graceful Process Management**: 2단계 종료 (SIGTERM → SIGKILL), 환경변수 정제로 자식 프로세스 간섭 방지.

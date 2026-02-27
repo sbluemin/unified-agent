@@ -11,7 +11,6 @@ import type {
 } from '../types/config.js';
 import { resolveNpxPath, buildNpxArgs } from '../utils/npx.js';
 import { cleanEnvironment } from '../utils/env.js';
-import { McpConnection } from '../connection/McpConnection.js';
 
 /** ACP 기본 인자 */
 const DEFAULT_ACP_ARGS = ['--experimental-acp'];
@@ -51,7 +50,6 @@ export const CLI_BACKENDS: Record<CliType, CliBackendConfig> = {
     protocol: 'acp',
     authRequired: true,
     npxPackage: '@zed-industries/codex-acp@0.9.4',
-    mcpCommand: ['mcp-server'],
     modes: [
       { id: 'default', label: 'Plan' },
       { id: 'autoEdit', label: 'Auto Edit' },
@@ -104,30 +102,6 @@ export function createSpawnConfig(
 
   return {
     command,
-    args,
-    useNpx: false,
-  };
-}
-
-/**
- * Codex MCP 직접 연결용 spawn 설정을 생성합니다.
- *
- * @param options - 연결 옵션
- * @returns spawn 설정
- */
-export function createCodexMcpSpawnConfig(
-  options: ConnectionOptions,
-): CliSpawnConfig {
-  const cliPath = options.cliPath ?? 'codex';
-  const cleanEnv = cleanEnvironment(process.env, options.env);
-  const args = McpConnection.buildCodexArgs(
-    cliPath,
-    options.yoloMode,
-    cleanEnv,
-  );
-
-  return {
-    command: cliPath,
     args,
     useNpx: false,
   };

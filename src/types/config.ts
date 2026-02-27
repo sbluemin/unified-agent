@@ -6,7 +6,7 @@
 export type CliType = 'gemini' | 'claude' | 'codex' | 'opencode';
 
 /** 통신 프로토콜 */
-export type ProtocolType = 'acp' | 'mcp';
+export type ProtocolType = 'acp';
 
 /** 에이전트 모드 옵션 */
 export interface AgentMode {
@@ -44,8 +44,6 @@ export interface CliBackendConfig {
   acpArgs?: string[];
   /** npx 패키지 (브릿지인 경우) */
   npxPackage?: string;
-  /** MCP 서버 커맨드 (MCP 프로토콜인 경우) */
-  mcpCommand?: string[];
   /** 사용 가능한 에이전트 모드 목록 (session/set_mode 지원 시) */
   modes?: AgentMode[];
 }
@@ -89,8 +87,6 @@ export interface CliDetectionResult {
 export interface UnifiedClientOptions extends ConnectionOptions {
   /** CLI 선택 (미지정 시 자동 감지) */
   cli?: CliType;
-  /** Codex 연결 시 프로토콜 선택 (기본: 'acp') */
-  codexProtocol?: ProtocolType;
   /** 자동 권한 승인 */
   autoApprove?: boolean;
 }

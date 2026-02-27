@@ -15,7 +15,7 @@ const CLI_DETECT_LIST: Array<{
 }> = [
   { id: 'gemini', command: 'gemini', protocols: ['acp'] },
   { id: 'claude', command: 'claude', protocols: ['acp'] },
-  { id: 'codex', command: 'codex', protocols: ['acp', 'mcp'] },
+  { id: 'codex', command: 'codex', protocols: ['acp'] },
   { id: 'opencode', command: 'opencode', protocols: ['acp'] },
 ];
 

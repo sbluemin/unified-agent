@@ -22,9 +22,8 @@ describe('CLI_BACKENDS', () => {
     expect(CLI_BACKENDS.claude.npxPackage).toContain('claude-agent-acp');
   });
 
-  it('codex는 npx 브릿지와 mcp 모두 지원해야 합니다', () => {
+  it('codex는 npx 브릿지를 사용해야 합니다', () => {
     expect(CLI_BACKENDS.codex.npxPackage).toContain('codex-acp');
-    expect(CLI_BACKENDS.codex.mcpCommand).toBeDefined();
   });
 
   it('opencode는 acp 서브커맨드를 사용해야 합니다', () => {

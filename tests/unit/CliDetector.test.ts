@@ -29,10 +29,10 @@ describe('CliDetector', () => {
     expect(r1).toEqual(r2);
   });
 
-  it('codex는 acp/mcp 프로토콜을 모두 지원해야 합니다', async () => {
+  it('codex는 acp 프로토콜을 지원해야 합니다', async () => {
     const result = await detector.detect('codex');
     expect(result.protocols).toContain('acp');
-    expect(result.protocols).toContain('mcp');
+    expect(result.protocols).not.toContain('mcp');
   });
 
   it('clearCache 후 재감지해야 합니다', async () => {

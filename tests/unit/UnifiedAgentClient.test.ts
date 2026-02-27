@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   UnifiedAgentClient,
   AcpConnection,
-  McpConnection,
   BaseConnection,
   CliDetector,
   CLI_BACKENDS,
@@ -21,10 +20,6 @@ describe('Public API Exports', () => {
 
   it('AcpConnection을 내보내야 합니다', () => {
     expect(AcpConnection).toBeDefined();
-  });
-
-  it('McpConnection을 내보내야 합니다', () => {
-    expect(McpConnection).toBeDefined();
   });
 
   it('BaseConnection을 내보내야 합니다', () => {
@@ -59,11 +54,6 @@ describe('UnifiedAgentClient 인스턴스', () => {
   it('연결 없이 sendMessage 호출 시 에러가 발생해야 합니다', async () => {
     const client = new UnifiedAgentClient();
     await expect(client.sendMessage('test')).rejects.toThrow('연결되어 있지 않습니다');
-  });
-
-  it('MCP 모드가 아닐 때 callTool 호출 시 에러가 발생해야 합니다', async () => {
-    const client = new UnifiedAgentClient();
-    await expect(client.callTool('test')).rejects.toThrow('MCP 모드');
   });
 
   it('detectClis가 결과를 반환해야 합니다', async () => {

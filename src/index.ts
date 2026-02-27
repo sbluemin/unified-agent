@@ -18,12 +18,13 @@ export {
   UnifiedAgentClient,
   type UnifiedClientEvents,
   type ConnectResult,
+  type ConnectionInfo,
+  type IUnifiedAgentClient,
 } from './client/UnifiedAgentClient.js';
 
 // === 연결 모듈 ===
 export { BaseConnection, type BaseConnectionOptions } from './connection/BaseConnection.js';
 export { AcpConnection, type AcpConnectionOptions, type AcpConnectionEventMap } from './connection/AcpConnection.js';
-export { McpConnection, type McpConnectionOptions } from './connection/McpConnection.js';
 
 // === CLI 감지 ===
 export { CliDetector } from './detector/CliDetector.js';
@@ -32,7 +33,6 @@ export { CliDetector } from './detector/CliDetector.js';
 export {
   CLI_BACKENDS,
   createSpawnConfig,
-  createCodexMcpSpawnConfig,
   getBackendConfig,
   getAllBackendConfigs,
 } from './config/CliConfigs.js';
@@ -71,21 +71,6 @@ export type {
   AcpFileWriteParams,
   AcpEvents,
 } from './types/acp.js';
-
-export type {
-  // MCP
-  McpInitializeParams,
-  McpInitializeResult,
-  McpTool,
-  McpToolCallParams,
-  McpToolCallResult,
-  McpContent,
-  CodexEventParams,
-  ElicitationCreateParams,
-  ElicitationDecision,
-  ElicitationResponse,
-  McpEvents,
-} from './types/mcp.js';
 
 export type {
   // 설정
