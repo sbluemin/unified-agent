@@ -1,6 +1,7 @@
 /**
  * @sbluemin/unified-agent
  * Codex CLI, Claude Code, Gemini CLI, OpenCode CLI 통합 SDK
+ * 공식 ACP SDK (@agentclientprotocol/sdk) 기반
  *
  * @example
  * ```typescript
@@ -37,27 +38,36 @@ export {
   getAllBackendConfigs,
 } from './config/CliConfigs.js';
 
+// === 공식 ACP SDK re-export ===
+export {
+  ClientSideConnection,
+  AgentSideConnection,
+  ndJsonStream,
+  RequestError,
+} from '@agentclientprotocol/sdk';
+
+export type {
+  Client as AcpClient,
+  Agent as AcpAgent,
+  Stream as AcpStream,
+} from '@agentclientprotocol/sdk';
+
 // === 타입 ===
 export type {
   // 공통
-  JsonRpcRequest,
-  JsonRpcResponse,
-  JsonRpcNotification,
-  JsonRpcError,
-  JsonRpcMessage,
-  PendingRequest,
   ConnectionState,
   ClientInfo,
   ConnectionEvents,
 } from './types/common.js';
 
 export type {
-  // ACP
+  // ACP (공식 SDK alias)
   AcpInitializeParams,
   AcpInitializeResult,
   AcpSessionNewParams,
   AcpSessionNewResult,
   AcpSessionPromptParams,
+  AcpPromptResponse,
   AcpSessionSetModeParams,
   AcpSessionSetModelParams,
   AcpSessionSetConfigParams,
@@ -68,7 +78,16 @@ export type {
   AcpPermissionOption,
   AcpPermissionResponse,
   AcpFileReadParams,
+  AcpFileReadResponse,
   AcpFileWriteParams,
+  AcpFileWriteResponse,
+  AcpContentBlock,
+  AcpTextContent,
+  AcpImageContent,
+  AcpResourceLink,
+  AcpConfigOption,
+  AcpSessionMode,
+  AcpStopReason,
   AcpEvents,
 } from './types/acp.js';
 

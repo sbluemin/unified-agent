@@ -16,8 +16,11 @@ import type {
   AcpSessionNewResult,
   AcpSessionUpdateParams,
   AcpPermissionRequestParams,
+  AcpPermissionResponse,
   AcpFileReadParams,
+  AcpFileReadResponse,
   AcpFileWriteParams,
+  AcpFileWriteResponse,
 } from '../types/acp.js';
 import type { ConnectionState } from '../types/common.js';
 
@@ -37,12 +40,12 @@ export interface UnifiedClientEvents {
   plan: [plan: string, sessionId: string];
   /** ACP 세션 업데이트 (원자적) */
   sessionUpdate: [update: AcpSessionUpdateParams];
-  /** ACP 권한 요청 */
-  permissionRequest: [params: AcpPermissionRequestParams, requestId: number];
-  /** 파일 읽기 요청 */
-  fileRead: [params: AcpFileReadParams, requestId: number];
-  /** 파일 쓰기 요청 */
-  fileWrite: [params: AcpFileWriteParams, requestId: number];
+  /** ACP 권한 요청 (콜백 기반 응답) */
+  permissionRequest: [params: AcpPermissionRequestParams, resolve: (response: AcpPermissionResponse) => void];
+  /** 파일 읽기 요청 (콜백 기반 응답) */
+  fileRead: [params: AcpFileReadParams, resolve: (response: AcpFileReadResponse) => void];
+  /** 파일 쓰기 요청 (콜백 기반 응답) */
+  fileWrite: [params: AcpFileWriteParams, resolve: (response: AcpFileWriteResponse) => void];
   /** 에러 */
   error: [error: Error];
   /** 프로세스 종료 */
@@ -149,24 +152,4 @@ export interface IUnifiedAgentClient {
    * @returns 모드 목록 (모드 미지원 시 빈 배열)
    */
   getAvailableModes(): AgentMode[];
-
-  // ─── 요청 응답 ──────────────────────────────────────
-
-  /**
-   * ACP 권한 요청에 응답합니다.
-   *
-   * @param requestId - 요청 ID
-   * @param optionId - 선택한 옵션 ID
-   */
-  respondToPermission(requestId: number, optionId: string): void;
-
-  /**
-   * ACP 파일 읽기 요청에 응답합니다.
-   */
-  respondToFileRead(requestId: number, content: string): void;
-
-  /**
-   * ACP 파일 쓰기 요청에 응답합니다.
-   */
-  respondToFileWrite(requestId: number, success: boolean): void;
 }

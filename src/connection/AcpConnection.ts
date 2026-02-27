@@ -1,23 +1,22 @@
 /**
- * AcpConnection - ACP (Agent Communication Protocol) 연결 구현
- * Gemini, Claude, Codex(bridge), OpenCode 공통 ACP 프로토콜 통신
+ * AcpConnection - 공식 ACP SDK 기반 연결 구현
+ * ClientSideConnection을 래핑하여 Gemini, Claude, Codex, OpenCode 통합 통신
  */
 
-import type {
-  JsonRpcNotification,
-  JsonRpcRequest,
-} from '../types/common.js';
-import type {
-  AcpInitializeResult,
-  AcpPermissionRequestParams,
-  AcpSessionNewResult,
-  AcpSessionPromptParams,
-  AcpSessionSetModeParams,
-  AcpSessionSetConfigParams,
-  AcpSessionUpdateParams,
-  AcpFileReadParams,
-  AcpFileWriteParams,
-} from '../types/acp.js';
+import {
+  ClientSideConnection,
+  type Client,
+  type Agent,
+  type SessionNotification,
+  type RequestPermissionRequest,
+  type RequestPermissionResponse,
+  type ReadTextFileRequest,
+  type ReadTextFileResponse,
+  type WriteTextFileRequest,
+  type WriteTextFileResponse,
+  type NewSessionResponse,
+  type PromptResponse,
+} from '@agentclientprotocol/sdk';
 import { BaseConnection, type BaseConnectionOptions } from './BaseConnection.js';
 
 /** AcpConnection 생성 옵션 */
@@ -40,21 +39,22 @@ export interface AcpConnectionEventMap {
   toolCall: [title: string, status: string, sessionId: string];
   toolCallUpdate: [title: string, status: string, sessionId: string];
   plan: [plan: string, sessionId: string];
-  sessionUpdate: [update: AcpSessionUpdateParams];
-  permissionRequest: [params: AcpPermissionRequestParams, requestId: number];
-  fileRead: [params: AcpFileReadParams, requestId: number];
-  fileWrite: [params: AcpFileWriteParams, requestId: number];
+  sessionUpdate: [update: SessionNotification];
+  permissionRequest: [params: RequestPermissionRequest, resolve: (response: RequestPermissionResponse) => void];
+  fileRead: [params: ReadTextFileRequest, resolve: (response: ReadTextFileResponse) => void];
+  fileWrite: [params: WriteTextFileRequest, resolve: (response: WriteTextFileResponse) => void];
   promptComplete: [sessionId: string];
 }
 
 /**
  * ACP 프로토콜 연결 클래스.
- * ACP JSON-RPC 2.0 over stdio 프로토콜을 구현합니다.
+ * 공식 ACP SDK의 ClientSideConnection을 래핑하여 통합 이벤트 인터페이스를 제공합니다.
  */
 export class AcpConnection extends BaseConnection {
   private readonly clientInfo: { name: string; version: string };
   private readonly protocolVersion: number;
   private readonly autoApprove: boolean;
+  private agentProxy: Agent | null = null;
 
   constructor(options: AcpConnectionOptions) {
     super(options);
@@ -68,36 +68,43 @@ export class AcpConnection extends BaseConnection {
 
   /**
    * ACP 연결을 시작합니다.
-   * 프로세스 spawn → initialize → 세션 생성까지 수행합니다.
+   * 프로세스 spawn → ClientSideConnection 생성 → initialize → 세션 생성까지 수행합니다.
    *
    * @param workspace - 작업 디렉토리 경로
    * @returns 세션 정보
    */
-  async connect(workspace: string): Promise<AcpSessionNewResult> {
-    // 1. 프로세스 spawn
-    this.spawnProcess();
+  async connect(workspace: string): Promise<NewSessionResponse> {
+    // 1. 프로세스 spawn + Web Streams 생성
+    const { stream } = this.spawnProcess();
     this.setState('initializing');
 
-    // 2. initialize 요청 (60초 타임아웃)
-    await this.sendRequest<AcpInitializeResult>(
-      'initialize',
-      {
-        protocolVersion: this.protocolVersion,
-        capabilities: {},
-        clientInfo: this.clientInfo,
+    // 2. ClientSideConnection 생성 (Client 인터페이스 구현)
+    const connection = new ClientSideConnection(
+      (agent: Agent): Client => {
+        // Agent 참조 저장 (나중에 RPC 호출용)
+        this.agentProxy = agent;
+        return this.createClientHandler();
       },
-      this.initTimeout,
+      stream,
     );
 
-    // 3. 세션 생성 (공식 ACP 스키마: cwd + mcpServers)
-    const session = await this.sendRequest<AcpSessionNewResult>(
-      'session/new',
-      {
-        cwd: workspace,
-        mcpServers: [],
-      },
-      this.initTimeout,
-    );
+    // 연결 종료 감지
+    connection.closed.then(() => {
+      this.setState('closed');
+    });
+
+    // 3. initialize 요청 (공식 SDK 타입: clientCapabilities, clientInfo)
+    await this.agentProxy!.initialize({
+      protocolVersion: this.protocolVersion,
+      clientCapabilities: {},
+      clientInfo: this.clientInfo,
+    });
+
+    // 4. 세션 생성 (공식 ACP 스키마: cwd + mcpServers)
+    const session = await this.agentProxy!.newSession({
+      cwd: workspace,
+      mcpServers: [],
+    });
 
     this.setState('ready');
     return session;
@@ -112,20 +119,18 @@ export class AcpConnection extends BaseConnection {
   async sendPrompt(
     sessionId: string,
     content: string,
-  ): Promise<void> {
-    // 공식 ACP 스키마: prompt는 ContentBlock 배열
-    const params: AcpSessionPromptParams = {
+  ): Promise<PromptResponse> {
+    if (!this.agentProxy) {
+      throw new Error('ACP 연결이 설정되지 않았습니다');
+    }
+    return this.agentProxy.prompt({
       sessionId,
       prompt: [{ type: 'text', text: content }],
-    };
-    return this.sendRequest(
-      'session/prompt',
-      params as unknown as Record<string, unknown>,
-    );
+    });
   }
 
   /**
-   * YOLO 모드(자동 승인)를 설정합니다.
+   * 에이전트 모드를 설정합니다.
    * session/set_mode RPC를 사용합니다.
    *
    * @param sessionId - 세션 ID
@@ -135,28 +140,26 @@ export class AcpConnection extends BaseConnection {
     sessionId: string,
     mode: string = 'bypassPermissions',
   ): Promise<void> {
-    const params: AcpSessionSetModeParams = { sessionId, modeId: mode };
-    return this.sendRequest(
-      'session/set_mode',
-      params as unknown as Record<string, unknown>,
-    );
+    if (!this.agentProxy) {
+      throw new Error('ACP 연결이 설정되지 않았습니다');
+    }
+    await this.agentProxy.setSessionMode?.({ sessionId, modeId: mode });
   }
 
   /**
    * 모델을 변경합니다.
    * session/set_model (primary) → session/set_config_option (fallback)
-   * AionUi 구현과 동일한 전략을 사용합니다.
    *
    * @param sessionId - 세션 ID
    * @param model - 모델 이름
    */
   async setModel(sessionId: string, model: string): Promise<void> {
+    if (!this.agentProxy) {
+      throw new Error('ACP 연결이 설정되지 않았습니다');
+    }
     try {
-      // Primary: session/set_model (파라미터: modelId)
-      await this.sendRequest(
-        'session/set_model',
-        { sessionId, modelId: model } as unknown as Record<string, unknown>,
-      );
+      // Primary: session/set_model
+      await this.agentProxy.unstable_setSessionModel?.({ sessionId, modelId: model });
     } catch {
       // Fallback: session/set_config_option
       await this.setConfigOption(sessionId, 'model', model);
@@ -176,138 +179,114 @@ export class AcpConnection extends BaseConnection {
     configId: string,
     value: string,
   ): Promise<void> {
-    const params: AcpSessionSetConfigParams = { sessionId, configId, value };
-    return this.sendRequest(
-      'session/set_config_option',
-      params as unknown as Record<string, unknown>,
-    );
-  }
-
-  /**
-   * 권한 요청에 응답합니다.
-   *
-   * @param requestId - JSON-RPC 요청 ID
-   * @param optionId - 선택한 옵션 ID
-   */
-  respondToPermission(requestId: number, optionId: string): void {
-    this.sendResponse(requestId, { optionId });
-  }
-
-  /**
-   * 파일 읽기 요청에 응답합니다.
-   *
-   * @param requestId - JSON-RPC 요청 ID
-   * @param content - 파일 내용
-   */
-  respondToFileRead(requestId: number, content: string): void {
-    this.sendResponse(requestId, { content });
-  }
-
-  /**
-   * 파일 쓰기 요청에 응답합니다.
-   *
-   * @param requestId - JSON-RPC 요청 ID
-   * @param success - 성공 여부
-   */
-  respondToFileWrite(requestId: number, success: boolean): void {
-    this.sendResponse(requestId, { success });
-  }
-
-  /**
-   * 서버 → 클라이언트 요청 처리 (권한 요청, 파일 I/O)
-   */
-  protected handleServerRequest(request: JsonRpcRequest): void {
-    switch (request.method) {
-      case 'session/request_permission': {
-        const params = request.params as unknown as AcpPermissionRequestParams;
-        if (this.autoApprove && params.options?.length > 0) {
-          // 자동 승인: 첫 번째 옵션 선택
-          this.respondToPermission(request.id, params.options[0].optionId);
-        } else {
-          this.emit('permissionRequest', params, request.id);
-        }
-        break;
-      }
-
-      case 'fs/read_text_file': {
-        const params = request.params as unknown as AcpFileReadParams;
-        this.emit('fileRead', params, request.id);
-        break;
-      }
-
-      case 'fs/write_text_file': {
-        const params = request.params as unknown as AcpFileWriteParams;
-        this.emit('fileWrite', params, request.id);
-        break;
-      }
-
-      default:
-        // 알 수 없는 서버 요청은 에러 응답
-        this.sendErrorResponse(
-          request.id,
-          -32601,
-          `지원하지 않는 메서드: ${request.method}`,
-        );
+    if (!this.agentProxy) {
+      throw new Error('ACP 연결이 설정되지 않았습니다');
     }
+    await this.agentProxy.setSessionConfigOption?.({ sessionId, configId, value });
   }
 
   /**
-   * 알림 메시지 처리 (session/update 등)
+   * Client 인터페이스 구현체를 생성합니다.
+   * Agent → Client 방향의 요청/알림을 이벤트로 전파합니다.
    */
-  protected handleNotification(notification: JsonRpcNotification): void {
-    switch (notification.method) {
-      case 'session/update': {
-        const params = notification.params as unknown as AcpSessionUpdateParams;
-        this.emit('sessionUpdate', params);
+  private createClientHandler(): Client {
+    return {
+      // 권한 요청 처리
+      requestPermission: async (params: RequestPermissionRequest): Promise<RequestPermissionResponse> => {
+        if (this.autoApprove && params.options && params.options.length > 0) {
+          // 자동 승인: 첫 번째 옵션 선택
+          return {
+            outcome: {
+              outcome: 'selected',
+              optionId: params.options[0].optionId,
+            },
+          };
+        }
 
-        if (!params?.update) break;
+        // 이벤트로 전파하고 응답 대기
+        return new Promise<RequestPermissionResponse>((resolve) => {
+          this.emit('permissionRequest', params, resolve);
+        });
+      },
 
-        const { update } = params;
-        const sessionId = params.sessionId;
+      // 세션 업데이트 알림 처리
+      sessionUpdate: async (notification: SessionNotification): Promise<void> => {
+        this.emit('sessionUpdate', notification);
+        this.processSessionUpdate(notification);
+      },
 
-        switch (update.sessionUpdate) {
-          case 'agent_message_chunk':
-            if (update.content?.text) {
-              this.emit('messageChunk', update.content.text, sessionId);
-            }
-            break;
+      // 파일 읽기 요청 처리
+      readTextFile: async (params: ReadTextFileRequest): Promise<ReadTextFileResponse> => {
+        return new Promise<ReadTextFileResponse>((resolve) => {
+          this.emit('fileRead', params, resolve);
+        });
+      },
 
-          case 'agent_thought_chunk':
-            if (update.content?.text) {
-              this.emit('thoughtChunk', update.content.text, sessionId);
-            }
-            break;
+      // 파일 쓰기 요청 처리
+      writeTextFile: async (params: WriteTextFileRequest): Promise<WriteTextFileResponse> => {
+        return new Promise<WriteTextFileResponse>((resolve) => {
+          this.emit('fileWrite', params, resolve);
+        });
+      },
+    };
+  }
 
-          case 'tool_call':
-            this.emit(
-              'toolCall',
-              update.title ?? '',
-              update.status ?? '',
-              sessionId,
-            );
-            break;
+  /**
+   * 세션 업데이트 알림을 파싱하여 개별 이벤트를 발생시킵니다.
+   */
+  private processSessionUpdate(notification: SessionNotification): void {
+    if (!notification?.update) return;
 
-          case 'tool_call_update':
-            this.emit(
-              'toolCallUpdate',
-              update.title ?? '',
-              update.status ?? '',
-              sessionId,
-            );
-            break;
+    const { update } = notification;
+    const sessionId = notification.sessionId;
 
-          case 'plan':
-            if (update.plan) {
-              this.emit('plan', update.plan, sessionId);
-            }
-            break;
+    switch (update.sessionUpdate) {
+      case 'agent_message_chunk':
+      case 'user_message_chunk': {
+        // ContentChunk.content는 ContentBlock (TextContent | ImageContent | ...)
+        const content = update.content as Record<string, unknown>;
+        if (content?.type === 'text' && typeof content?.text === 'string') {
+          this.emit('messageChunk', content.text, sessionId);
         }
         break;
       }
 
-      default:
-        // 기타 알림은 generic 이벤트로 전달
-        this.emit('notification', notification.method, notification.params);
+      case 'agent_thought_chunk': {
+        const content = update.content as Record<string, unknown>;
+        if (content?.type === 'text' && typeof content?.text === 'string') {
+          this.emit('thoughtChunk', content.text, sessionId);
+        }
+        break;
+      }
+
+      case 'tool_call': {
+        this.emit(
+          'toolCall',
+          update.title ?? '',
+          update.status ?? '',
+          sessionId,
+        );
+        break;
+      }
+
+      case 'tool_call_update': {
+        const toolUpdate = update as Record<string, unknown>;
+        this.emit(
+          'toolCallUpdate',
+          (toolUpdate.title as string) ?? '',
+          (toolUpdate.status as string) ?? '',
+          sessionId,
+        );
+        break;
+      }
+
+      case 'plan': {
+        const entries = update.entries;
+        if (entries) {
+          this.emit('plan', JSON.stringify(entries), sessionId);
+        }
+        break;
+      }
     }
   }
 }

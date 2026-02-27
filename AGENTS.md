@@ -9,7 +9,7 @@ Gemini CLI, Claude Code, Codex CLI, OpenCode CLI를 ACP 프로토콜로 통합�
 - **언어**: TypeScript (ES2022, strict 모드)
 - **빌드**: tsup (ESM + CJS 듀얼 출력)
 - **테스트**: Vitest
-- **런타임 의존성**: 없음 (Node.js 내장 모듈만 사용)
+- **런타임 의존성**: `@agentclientprotocol/sdk`, `zod`
 - **Node.js**: >= 18.0.0
 
 ## 프로젝트 구조
@@ -23,7 +23,7 @@ src/
 │   └── config.ts               # CLI 설정/감지 타입
 ├── connection/
 │   ├── BaseConnection.ts       # 추상 기반 (spawn + JSON-RPC stdio)
-│   └── AcpConnection.ts        # ACP 프로토콜 구현
+│   └── AcpConnection.ts        # ACP 프로토콜 구현 (공식 SDK ClientSideConnection 래핑)
 ├── client/
 │   └── UnifiedAgentClient.ts   # 통합 클라이언트 (최상위 API)
 ├── detector/
@@ -87,7 +87,7 @@ npm run build
 - `describe.skipIf(!isCliInstalled('xxx'))` 패턴으로 설치되지 않은 CLI 자동 건너뛰기.
 
 ### 의존성
-- **런타임 의존성 0개** 원칙 — `child_process`, `events`, `path` 등 Node.js 내장 모듈만 사용.
+- **런타임 의존성 2개**: `@agentclientprotocol/sdk`(공식 ACP SDK) + `zod`(스키마 검증).
 - 개발 도구만 devDependencies에 추가: `typescript`, `tsup`, `vitest`, `@types/node`.
 
 ## CLI별 ACP 지원 현황
@@ -102,6 +102,7 @@ npm run build
 ## 아키텍처 의사결정
 
 1. **ACP 단일 프로토콜**: 모든 CLI를 ACP 프로토콜로 통합. `UnifiedAgentClient`로 추상화.
-2. **Config-driven**: CLI 차이는 `CliConfigs.ts`의 설정으로 관리. 코드 분기 최소화.
-3. **Event-driven Streaming**: `EventEmitter` 기반 실시간 응답 처리 (`messageChunk`, `toolCall` 등).
-4. **Graceful Process Management**: 2단계 종료 (SIGTERM → SIGKILL), 환경변수 정제로 자식 프로세스 간섭 방지.
+2. **공식 ACP SDK 기반**: `@agentclientprotocol/sdk`의 `ClientSideConnection`을 래핑하여 프로토콜 통신 위임.
+3. **Config-driven**: CLI 차이는 `CliConfigs.ts`의 설정으로 관리. 코드 분기 최소화.
+4. **Event-driven Streaming**: `EventEmitter` 기반 실시간 응답 처리 (`messageChunk`, `toolCall` 등).
+5. **Graceful Process Management**: 2단계 종료 (SIGTERM → SIGKILL), 환경변수 정제로 자식 프로세스 간섭 방지.

@@ -13,8 +13,11 @@ import type {
 import type {
   AcpSessionUpdateParams,
   AcpPermissionRequestParams,
+  AcpPermissionResponse,
   AcpFileReadParams,
+  AcpFileReadResponse,
   AcpFileWriteParams,
+  AcpFileWriteResponse,
 } from '../types/acp.js';
 import type { ConnectionState } from '../types/common.js';
 import type {
@@ -133,7 +136,8 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
    */
   async sendMessage(content: string): Promise<void> {
     if (this.acpConnection && this.sessionId) {
-      return this.acpConnection.sendPrompt(this.sessionId, content);
+      await this.acpConnection.sendPrompt(this.sessionId, content);
+      return;
     }
 
     throw new Error('연결되어 있지 않습니다');
@@ -183,39 +187,6 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
     if (!this.activeCli) return [];
     const config = getBackendConfig(this.activeCli);
     return config.modes ?? [];
-  }
-
-  /**
-   * ACP 권한 요청에 응답합니다.
-   *
-   * @param requestId - 요청 ID
-   * @param optionId - 선택한 옵션 ID
-   */
-  respondToPermission(requestId: number, optionId: string): void {
-    if (!this.acpConnection) {
-      throw new Error('ACP 연결이 없습니다');
-    }
-    this.acpConnection.respondToPermission(requestId, optionId);
-  }
-
-  /**
-   * ACP 파일 읽기 요청에 응답합니다.
-   */
-  respondToFileRead(requestId: number, content: string): void {
-    if (!this.acpConnection) {
-      throw new Error('ACP 연결이 없습니다');
-    }
-    this.acpConnection.respondToFileRead(requestId, content);
-  }
-
-  /**
-   * ACP 파일 쓰기 요청에 응답합니다.
-   */
-  respondToFileWrite(requestId: number, success: boolean): void {
-    if (!this.acpConnection) {
-      throw new Error('ACP 연결이 없습니다');
-    }
-    this.acpConnection.respondToFileWrite(requestId, success);
   }
 
   /**
@@ -279,14 +250,14 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
     this.acpConnection.on('sessionUpdate', (update: AcpSessionUpdateParams) => {
       this.emit('sessionUpdate', update);
     });
-    this.acpConnection.on('permissionRequest', (params: AcpPermissionRequestParams, id: number) => {
-      this.emit('permissionRequest', params, id);
+    this.acpConnection.on('permissionRequest', (params: AcpPermissionRequestParams, resolve: (response: AcpPermissionResponse) => void) => {
+      this.emit('permissionRequest', params, resolve);
     });
-    this.acpConnection.on('fileRead', (params: AcpFileReadParams, id: number) => {
-      this.emit('fileRead', params, id);
+    this.acpConnection.on('fileRead', (params: AcpFileReadParams, resolve: (response: AcpFileReadResponse) => void) => {
+      this.emit('fileRead', params, resolve);
     });
-    this.acpConnection.on('fileWrite', (params: AcpFileWriteParams, id: number) => {
-      this.emit('fileWrite', params, id);
+    this.acpConnection.on('fileWrite', (params: AcpFileWriteParams, resolve: (response: AcpFileWriteResponse) => void) => {
+      this.emit('fileWrite', params, resolve);
     });
     this.acpConnection.on('error', (err: Error) => {
       this.emit('error', err);
