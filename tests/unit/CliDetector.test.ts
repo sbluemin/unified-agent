@@ -40,7 +40,7 @@ describe('CliDetector', () => {
     detector.clearCache();
     const results = await detector.detectAll();
     expect(results.length).toBe(4);
-  });
+  }, 20_000);
 
   it('getAvailable은 배열을 반환해야 합니다', async () => {
     const available = await detector.getAvailable();

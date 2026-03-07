@@ -3,7 +3,7 @@
  * 시스템에 설치된 CLI를 감지하고 사용 가능 여부를 확인합니다.
  */
 
-import { execSync } from 'child_process';
+import { execFile } from 'child_process';
 import type { CliDetectionResult, CliType, ProtocolType } from '../types/config.js';
 import { isWindows } from '../utils/env.js';
 
@@ -32,27 +32,20 @@ export class CliDetector {
    * @param command - CLI 커맨드 이름
    * @returns 사용 가능 여부
    */
-  private isCliAvailable(command: string): boolean {
+  private async isCliAvailable(command: string): Promise<boolean> {
     const whichCommand = isWindows() ? 'where' : 'which';
 
     try {
-      execSync(`${whichCommand} ${command}`, {
-        encoding: 'utf-8',
-        stdio: 'pipe',
-        timeout: 3000,
-      });
+      await this.execCommand(whichCommand, [command], 3000);
       return true;
     } catch {
       if (isWindows()) {
         // Windows: PowerShell Get-Command 폴백
         try {
-          execSync(
-            `powershell -NoProfile -Command "Get-Command -All ${command}"`,
-            {
-              encoding: 'utf-8',
-              stdio: 'pipe',
-              timeout: 5000,
-            },
+          await this.execCommand(
+            'powershell',
+            ['-NoProfile', '-Command', `Get-Command -All ${command}`],
+            5000,
           );
           return true;
         } catch {
@@ -69,14 +62,9 @@ export class CliDetector {
    * @param command - CLI 커맨드 이름
    * @returns 버전 문자열 또는 undefined
    */
-  private detectVersion(command: string): string | undefined {
+  private async detectVersion(command: string): Promise<string | undefined> {
     try {
-      const output = execSync(`${command} --version`, {
-        encoding: 'utf-8',
-        stdio: 'pipe',
-        timeout: 5000,
-      }).trim();
-
+      const output = await this.execCommand(command, ['--version'], 5000);
       const match = output.match(/(\d+\.\d+\.\d+)/);
       return match ? match[1] : output;
     } catch {
@@ -90,17 +78,12 @@ export class CliDetector {
    * @param command - CLI 커맨드 이름
    * @returns 전체 경로 또는 커맨드 이름
    */
-  private getCliPath(command: string): string {
+  private async getCliPath(command: string): Promise<string> {
     const whichCommand = isWindows() ? 'where' : 'which';
 
     try {
-      const result = execSync(`${whichCommand} ${command}`, {
-        encoding: 'utf-8',
-        stdio: 'pipe',
-        timeout: 3000,
-      }).trim();
-
-      return result.split('\n')[0].trim();
+      const result = await this.execCommand(whichCommand, [command], 3000);
+      return result.split(/\r?\n/)[0].trim();
     } catch {
       return command;
     }
@@ -117,23 +100,26 @@ export class CliDetector {
       return Array.from(this.cache.values());
     }
 
-    const results: CliDetectionResult[] = [];
+    const results = await Promise.all(
+      CLI_DETECT_LIST.map(async ({ id, command, protocols }) => {
+        const available = await this.isCliAvailable(command);
+        const result: CliDetectionResult = {
+          cli: id,
+          path: available ? await this.getCliPath(command) : command,
+          available,
+          protocols,
+        };
 
-    for (const { id, command, protocols } of CLI_DETECT_LIST) {
-      const available = this.isCliAvailable(command);
-      const result: CliDetectionResult = {
-        cli: id,
-        path: available ? this.getCliPath(command) : command,
-        available,
-        protocols,
-      };
+        if (available) {
+          result.version = await this.detectVersion(command);
+        }
 
-      if (available) {
-        result.version = this.detectVersion(command);
-      }
+        return result;
+      }),
+    );
 
-      this.cache.set(id, result);
-      results.push(result);
+    for (const result of results) {
+      this.cache.set(result.cli, result);
     }
 
     return results;
@@ -164,16 +150,16 @@ export class CliDetector {
       };
     }
 
-    const available = this.isCliAvailable(config.command);
+    const available = await this.isCliAvailable(config.command);
     const result: CliDetectionResult = {
       cli,
-      path: available ? this.getCliPath(config.command) : config.command,
+      path: available ? await this.getCliPath(config.command) : config.command,
       available,
       protocols: config.protocols,
     };
 
     if (available) {
-      result.version = this.detectVersion(config.command);
+      result.version = await this.detectVersion(config.command);
     }
 
     this.cache.set(cli, result);
@@ -206,5 +192,34 @@ export class CliDetector {
    */
   clearCache(): void {
     this.cache.clear();
+  }
+
+  /**
+   * 외부 명령 실행 결과(stdout)를 문자열로 반환합니다.
+   */
+  private async execCommand(
+    command: string,
+    args: string[],
+    timeout: number,
+  ): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      execFile(
+        command,
+        args,
+        {
+          encoding: 'utf-8',
+          timeout,
+          windowsHide: true,
+        },
+        (error, stdout) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          resolve(stdout.trim());
+        },
+      );
+    });
   }
 }
