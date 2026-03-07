@@ -1,6 +1,6 @@
 /**
  * @sbluemin/unified-agent
- * Codex CLI, Claude Code, Gemini CLI, OpenCode CLI 통합 SDK
+ * Codex CLI, Claude Code, Gemini CLI 통합 SDK
  * 공식 ACP SDK (@agentclientprotocol/sdk) 기반
  *
  * @example

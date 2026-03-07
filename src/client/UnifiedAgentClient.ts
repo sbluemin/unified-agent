@@ -105,7 +105,7 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
       const preferred = await this.detector.getPreferred();
       if (!preferred) {
         throw new Error(
-          '사용 가능한 CLI가 없습니다. gemini, claude, codex, opencode 중 하나를 설치해주세요.',
+          '사용 가능한 CLI가 없습니다. gemini, claude, codex 중 하나를 설치해주세요.',
         );
       }
       selectedCli = preferred.cli;
@@ -242,7 +242,7 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
 
   /**
    * 에이전트 모드를 설정합니다.
-   * CLI별 지원 모드: OpenCode(build/plan), Claude(default/plan/bypassPermissions) 등.
+   * CLI별 지원 모드: Claude(default/plan/bypassPermissions), Codex(default/autoEdit/yolo) 등.
    *
    * @param mode - 모드 ID (e.g., 'build', 'plan', 'bypassPermissions')
    */

@@ -1,6 +1,6 @@
 /**
  * AcpConnection - 공식 ACP SDK 기반 연결 구현
- * ClientSideConnection을 래핑하여 Gemini, Claude, Codex, OpenCode 통합 통신
+ * ClientSideConnection을 래핑하여 Gemini, Claude, Codex 통합 통신
  */
 
 import {

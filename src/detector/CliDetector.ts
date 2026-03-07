@@ -16,7 +16,6 @@ const CLI_DETECT_LIST: Array<{
   { id: 'gemini', command: 'gemini', protocols: ['acp'] },
   { id: 'claude', command: 'claude', protocols: ['acp'] },
   { id: 'codex', command: 'codex', protocols: ['acp'] },
-  { id: 'opencode', command: 'opencode', protocols: ['acp'] },
 ];
 
 /**
@@ -178,7 +177,7 @@ export class CliDetector {
 
   /**
    * 첫 번째 사용 가능한 CLI를 반환합니다.
-   * 우선순위: gemini > claude > codex > opencode
+   * 우선순위: gemini > claude > codex
    *
    * @returns 사용 가능한 CLI 또는 null
    */

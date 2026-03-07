@@ -56,18 +56,6 @@ export const CLI_BACKENDS: Record<CliType, CliBackendConfig> = {
       { id: 'yolo', label: 'Full Auto' },
     ],
   },
-  opencode: {
-    id: 'opencode',
-    name: 'OpenCode CLI',
-    cliCommand: 'opencode',
-    protocol: 'acp',
-    authRequired: false,
-    acpArgs: ['acp'],
-    modes: [
-      { id: 'build', label: 'Build' },
-      { id: 'plan', label: 'Plan' },
-    ],
-  },
 };
 
 /**
@@ -96,7 +84,7 @@ export function createSpawnConfig(
     };
   }
 
-  // CLI를 직접 spawn하는 경우 (Gemini, OpenCode)
+  // CLI를 직접 spawn하는 경우 (Gemini)
   const command = options.cliPath ?? backend.cliCommand;
   const args = backend.acpArgs ? [...backend.acpArgs] : [];
 

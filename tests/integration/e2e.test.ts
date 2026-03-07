@@ -155,4 +155,3 @@ function createE2eTest(cli: CliType, command: string) {
 createE2eTest('gemini', 'gemini');
 createE2eTest('claude', 'claude');
 createE2eTest('codex', 'codex');
-createE2eTest('opencode', 'opencode');

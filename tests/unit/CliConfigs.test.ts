@@ -10,8 +10,8 @@ import type { ConnectionOptions } from '../../src/types/config.js';
 const defaultOpts: ConnectionOptions = { cwd: '/tmp/test' };
 
 describe('CLI_BACKENDS', () => {
-  it('4개 CLI 설정이 정의되어야 합니다', () => {
-    expect(Object.keys(CLI_BACKENDS)).toEqual(['gemini', 'claude', 'codex', 'opencode']);
+  it('3개 CLI 설정이 정의되어야 합니다', () => {
+    expect(Object.keys(CLI_BACKENDS)).toEqual(['gemini', 'claude', 'codex']);
   });
 
   it('gemini는 --experimental-acp 인자를 사용해야 합니다', () => {
@@ -26,9 +26,6 @@ describe('CLI_BACKENDS', () => {
     expect(CLI_BACKENDS.codex.npxPackage).toContain('codex-acp');
   });
 
-  it('opencode는 acp 서브커맨드를 사용해야 합니다', () => {
-    expect(CLI_BACKENDS.opencode.acpArgs).toEqual(['acp']);
-  });
 });
 
 describe('createSpawnConfig', () => {
@@ -36,13 +33,6 @@ describe('createSpawnConfig', () => {
     const config = createSpawnConfig('gemini', defaultOpts);
     expect(config.command).toBe('gemini');
     expect(config.args).toContain('--experimental-acp');
-    expect(config.useNpx).toBe(false);
-  });
-
-  it('opencode 설정을 올바르게 생성해야 합니다', () => {
-    const config = createSpawnConfig('opencode', defaultOpts);
-    expect(config.command).toBe('opencode');
-    expect(config.args).toEqual(['acp']);
     expect(config.useNpx).toBe(false);
   });
 
@@ -67,6 +57,6 @@ describe('getBackendConfig / getAllBackendConfigs', () => {
   });
 
   it('모든 백엔드 설정을 반환해야 합니다', () => {
-    expect(getAllBackendConfigs().length).toBe(4);
+    expect(getAllBackendConfigs().length).toBe(3);
   });
 });

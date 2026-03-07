@@ -7,7 +7,6 @@
  *    1.1 Gemini → gemini-3.1-pro-preview, gemini-3-flash-preview
  *    1.2 Codex → gpt-5.3-codex, gpt-5.3-codex-spark
  *    1.3 Claude → opus, sonnet(default), haiku
- *    1.4 OpenCode → github-copilot/claude-sonnet-4.6-thinking 등
  * 2. Codex reasoning effort (low, medium, high, xhigh)
  * 3. Claude effort (configOptions에 존재하면 테스트)
  */
@@ -193,42 +192,5 @@ describe.skipIf(!isCliInstalled('gemini'))('E2E: Gemini 설정 변경', () => {
     } catch (err) {
       console.log(`  ⚠️  gemini set_config_option 미지원: ${(err as Error).message.slice(0, 100)}`);
     }
-  }, 60_000);
-});
-
-// ═══════════════════════════════════════════════
-// 1.4 OpenCode 모델/모드 변경
-// ═══════════════════════════════════════════════
-describe.skipIf(!isCliInstalled('opencode'))('E2E: OpenCode 설정 변경', () => {
-  let conn: AcpConnection;
-
-  afterEach(async () => {
-    if (conn) await conn.disconnect();
-  });
-
-  it('모델 변경: github-copilot/claude-sonnet-4.6/thinking', async () => {
-    const { conn: c, sessionId } = await connectAcp('opencode');
-    conn = c;
-
-    try {
-      await conn.setConfigOption(sessionId, 'model', 'github-copilot/claude-sonnet-4.6/thinking');
-      console.log(`  ✅ opencode model → github-copilot/claude-sonnet-4.6/thinking`);
-    } catch (err) {
-      // OpenCode는 models를 제공하지만 set_config_option 대신 별도 방식일 수 있음
-      console.log(`  ⚠️  opencode config 변경: ${(err as Error).message.slice(0, 100)}`);
-    }
-  }, 60_000);
-
-  it('모드 변경: plan → build', async () => {
-    const { conn: c, sessionId } = await connectAcp('opencode');
-    conn = c;
-
-    // plan 모드로 변경
-    await conn.setMode(sessionId, 'plan');
-    console.log(`  ✅ opencode mode → plan`);
-
-    // build 모드로 변경
-    await conn.setMode(sessionId, 'build');
-    console.log(`  ✅ opencode mode → build`);
   }, 60_000);
 });

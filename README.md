@@ -1,10 +1,10 @@
 # @sbluemin/unified-agent
 
-> Codex CLI, Claude Code, Gemini CLI, OpenCode CLI를 통합하는 TypeScript SDK
+> Codex CLI, Claude Code, Gemini CLI를 통합하는 TypeScript SDK
 
 ## 개요
 
-Unified Agent는 4개의 주요 CLI 에이전트(Gemini, Claude, Codex, OpenCode)를 **하나의 통합된 인터페이스**로 제어하는 TypeScript SDK입니다.
+Unified Agent는 3개의 주요 CLI 에이전트(Gemini, Claude, Codex)를 **하나의 통합된 인터페이스**로 제어하는 TypeScript SDK입니다.
 
 ### 지원 프로토콜
 
@@ -13,7 +13,6 @@ Unified Agent는 4개의 주요 CLI 에이전트(Gemini, Claude, Codex, OpenCode
 | **Gemini** | ACP | `gemini --experimental-acp` |
 | **Claude** | ACP | `npx @zed-industries/claude-agent-acp@0.18.0` |
 | **Codex** | ACP | `npx @zed-industries/codex-acp@0.9.4` |
-| **OpenCode** | ACP | `opencode acp` |
 
 ## 설치
 
@@ -117,7 +116,7 @@ const result = await client.connect({
 
 ```
 UnifiedAgentClient
-  ├── AcpConnection (Gemini, Claude, Codex-bridge, OpenCode)
+  ├── AcpConnection (Gemini, Claude, Codex-bridge)
   │     └── BaseConnection (spawn + JSON-RPC 2.0 over stdio)
 ```
 

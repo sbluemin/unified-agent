@@ -2,7 +2,7 @@
 
 ## 프로젝트 개요
 
-Gemini CLI, Claude Code, Codex CLI, OpenCode CLI를 ACP 프로토콜로 통합하는 zero-dependency TypeScript SDK.
+Gemini CLI, Claude Code, Codex CLI를 ACP 프로토콜로 통합하는 zero-dependency TypeScript SDK.
 
 ## 기술 스택
 
@@ -97,7 +97,6 @@ npm run build
 | Gemini | ACP | `gemini --experimental-acp` | ❌ | ❌ |
 | Claude | ACP (npx bridge) | `npx @zed-industries/claude-agent-acp@0.18.0` | ✅ | ✅ |
 | Codex | ACP (npx bridge) | `npx @zed-industries/codex-acp@0.9.4` | ✅ | ✅ |
-| OpenCode | ACP | `opencode acp` | ✅ | ✅ |
 
 ## 아키텍처 의사결정
 

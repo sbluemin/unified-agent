@@ -32,7 +32,7 @@ describe('Public API Exports', () => {
 
   it('CLI_BACKENDS를 내보내야 합니다', () => {
     expect(CLI_BACKENDS).toBeDefined();
-    expect(Object.keys(CLI_BACKENDS).length).toBe(4);
+    expect(Object.keys(CLI_BACKENDS).length).toBe(3);
   });
 
   it('유틸리티 함수를 내보내야 합니다', () => {
@@ -79,7 +79,7 @@ describe('UnifiedAgentClient 인스턴스', () => {
     const client = new UnifiedAgentClient();
     const clis = await client.detectClis();
     expect(Array.isArray(clis)).toBe(true);
-    expect(clis.length).toBe(4);
+    expect(clis.length).toBe(3);
   });
 
   it('disconnect가 에러 없이 동작해야 합니다', async () => {

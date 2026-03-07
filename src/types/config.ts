@@ -3,7 +3,7 @@
  */
 
 /** 지원하는 CLI 종류 */
-export type CliType = 'gemini' | 'claude' | 'codex' | 'opencode';
+export type CliType = 'gemini' | 'claude' | 'codex';
 
 /** 통신 프로토콜 */
 export type ProtocolType = 'acp';
@@ -20,7 +20,7 @@ export interface AgentMode {
 
 /** CLI 스폰 설정 */
 export interface CliSpawnConfig {
-  /** 실행 커맨드 (e.g., 'gemini', 'npx', 'opencode') */
+  /** 실행 커맨드 (e.g., 'gemini', 'npx') */
   command: string;
   /** 커맨드 인자 */
   args: string[];

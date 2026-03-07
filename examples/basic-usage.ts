@@ -2,7 +2,7 @@
  * @sbluemin/unified-agent 기본 사용 예제
  *
  * 사전 요구사항:
- * - gemini, claude, codex, opencode 중 하나 이상 설치
+ * - gemini, claude, codex 중 하나 이상 설치
  * - 해당 CLI의 인증 완료
  *
  * 실행: npx tsx examples/basic-usage.ts

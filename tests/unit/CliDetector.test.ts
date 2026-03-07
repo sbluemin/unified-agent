@@ -8,10 +8,10 @@ describe('CliDetector', () => {
     detector = new CliDetector();
   });
 
-  it('4개 CLI 감지 결과를 반환해야 합니다', async () => {
+  it('3개 CLI 감지 결과를 반환해야 합니다', async () => {
     const results = await detector.detectAll();
-    expect(results.length).toBe(4);
-    expect(results.map((r) => r.cli)).toEqual(['gemini', 'claude', 'codex', 'opencode']);
+    expect(results.length).toBe(3);
+    expect(results.map((r) => r.cli)).toEqual(['gemini', 'claude', 'codex']);
   });
 
   it('각 결과에 필수 필드가 있어야 합니다', async () => {
@@ -39,7 +39,7 @@ describe('CliDetector', () => {
     await detector.detectAll();
     detector.clearCache();
     const results = await detector.detectAll();
-    expect(results.length).toBe(4);
+    expect(results.length).toBe(3);
   }, 20_000);
 
   it('getAvailable은 배열을 반환해야 합니다', async () => {
