@@ -64,6 +64,23 @@ function createMockChild(): ChildProcess & {
   return child;
 }
 
+/** 종료 이벤트를 지연시키는 모의 ChildProcess 생성 */
+function createDelayedExitChild(delayMs: number): ChildProcess & {
+  mockStdin: Writable & { written: string[] };
+  mockStdout: Readable;
+  mockStderr: Readable;
+} {
+  const child = createMockChild();
+  child.kill = vi.fn(() => {
+    child.killed = true;
+    setTimeout(() => {
+      child.emit('exit', 0, null);
+    }, delayMs);
+    return true;
+  });
+  return child;
+}
+
 describe('BaseConnection', () => {
   const defaultOptions: BaseConnectionOptions = {
     command: 'test-command',
@@ -118,6 +135,19 @@ describe('BaseConnection', () => {
       await connection.disconnect();
 
       expect(connection.connectionState).toBe('disconnected');
+    });
+
+    it('disconnect는 child exit까지 대기해야 합니다', async () => {
+      const delayedConnection = new TestConnection(defaultOptions);
+      const delayedChild = createDelayedExitChild(120);
+      delayedConnection.injectChild(delayedChild as unknown as ChildProcess);
+
+      const startedAt = Date.now();
+      await delayedConnection.disconnect();
+      const elapsed = Date.now() - startedAt;
+
+      expect(elapsed).toBeGreaterThanOrEqual(100);
+      expect(delayedConnection.connectionState).toBe('disconnected');
     });
   });
 

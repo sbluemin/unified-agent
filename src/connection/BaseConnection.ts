@@ -36,6 +36,7 @@ export class BaseConnection extends EventEmitter {
   protected child: ChildProcess | null = null;
   protected state: ConnectionState = 'disconnected';
   protected acpStream: Stream | null = null;
+  protected childExitPromise: Promise<void> | null = null;
 
   protected readonly command: string;
   protected readonly args: string[];
@@ -72,6 +73,12 @@ export class BaseConnection extends EventEmitter {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: this.env as NodeJS.ProcessEnv,
       shell: isWindows(),
+    });
+
+    this.childExitPromise = new Promise<void>((resolve) => {
+      child.once('exit', () => {
+        resolve();
+      });
     });
 
     // stderr 로그 수집
@@ -115,8 +122,14 @@ export class BaseConnection extends EventEmitter {
    */
   async disconnect(): Promise<void> {
     if (this.child) {
-      killProcess(this.child);
+      const child = this.child;
+      const exitPromise = this.childExitPromise ?? this.createExitPromise(child);
+
+      killProcess(child);
+      await this.waitForExit(exitPromise, 5000);
+
       this.child = null;
+      this.childExitPromise = null;
     }
     this.acpStream = null;
     this.setState('disconnected');
@@ -130,5 +143,40 @@ export class BaseConnection extends EventEmitter {
       this.state = newState;
       this.emit('stateChange', newState);
     }
+  }
+
+  /**
+   * 이미 종료된 프로세스를 고려해 exit 대기 Promise를 생성합니다.
+   */
+  private createExitPromise(child: ChildProcess): Promise<void> {
+    if (child.exitCode != null || child.signalCode != null) {
+      return Promise.resolve();
+    }
+
+    return new Promise<void>((resolve) => {
+      child.once('exit', () => {
+        resolve();
+      });
+    });
+  }
+
+  /**
+   * 프로세스 종료를 지정 시간까지 대기합니다.
+   */
+  private async waitForExit(
+    exitPromise: Promise<void>,
+    timeoutMs: number,
+  ): Promise<void> {
+    if (timeoutMs <= 0) {
+      await exitPromise;
+      return;
+    }
+
+    await Promise.race([
+      exitPromise,
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, timeoutMs);
+      }),
+    ]);
   }
 }
