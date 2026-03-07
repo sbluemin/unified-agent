@@ -4,15 +4,16 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { EventEmitter, Readable, Writable } from 'stream';
-import { ChildProcess } from 'child_process';
+import { EventEmitter } from 'events';
+import { Readable, Writable } from 'stream';
+import type { ChildProcess } from 'child_process';
+import { ndJsonStream, type RequestPermissionRequest, type RequestPermissionResponse } from '@agentclientprotocol/sdk';
 import { AcpConnection, type AcpConnectionOptions } from '../../src/connection/AcpConnection.js';
-import type {
-  RequestPermissionRequest,
-  RequestPermissionResponse,
-  SessionNotification,
-  NewSessionResponse,
-} from '@agentclientprotocol/sdk';
+
+/** 지연 헬퍼 */
+async function wait(ms = 80): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /** stdin 모의 스트림 생성 */
 function createMockStdin(): Writable & { written: string[] } {
@@ -23,7 +24,7 @@ function createMockStdin(): Writable & { written: string[] } {
       callback();
     },
   });
-  (writable as any).written = chunks;
+  (writable as Writable & { written: string[] }).written = chunks;
   return writable as Writable & { written: string[] };
 }
 
@@ -38,18 +39,24 @@ function createMockChild(): {
   const stdout = new Readable({ read() {} });
   const stderr = new Readable({ read() {} });
 
-  const child = new EventEmitter() as any;
-  child.stdin = stdin;
-  child.stdout = stdout;
-  child.stderr = stderr;
-  child.pid = 12345;
-  child.killed = false;
-  child.kill = vi.fn(() => {
-    child.killed = true;
+  const child = new EventEmitter() as ChildProcess;
+  (child as ChildProcess & { stdin: Writable }).stdin = stdin;
+  (child as ChildProcess & { stdout: Readable }).stdout = stdout;
+  (child as ChildProcess & { stderr: Readable }).stderr = stderr;
+  (child as ChildProcess & { pid: number }).pid = 12345;
+  (child as ChildProcess & { killed: boolean }).killed = false;
+  (child as ChildProcess & { kill: (signal?: NodeJS.Signals) => boolean }).kill = vi.fn(() => {
+    (child as ChildProcess & { killed: boolean }).killed = true;
     child.emit('exit', 0, null);
+    return true;
   });
 
   return { child, stdin, stdout, stderr };
+}
+
+/** 직렬화된 JSON-RPC 메시지 파싱 */
+function parseMessage(raw: string): Record<string, unknown> {
+  return JSON.parse(raw.replace('\n', '')) as Record<string, unknown>;
 }
 
 /**
@@ -62,29 +69,69 @@ class TestableAcpConnection extends AcpConnection {
     this.mockChildData = mock;
   }
 
-  // Agent 프록시에 직접 접근하기 위한 헬퍼
   getAgentProxy() {
-    return (this as any).agentProxy;
+    return (this as unknown as { agentProxy: unknown }).agentProxy;
   }
 
   protected spawnProcess() {
     if (!this.mockChildData) {
       throw new Error('mockChild가 설정되지 않았습니다');
     }
-    this.child = this.mockChildData.child as unknown as ChildProcess;
+
+    this.child = this.mockChildData.child;
     this.setState('connected');
 
-    // Node.js Stream → Web Streams 변환
-    const { Writable: NodeWritable, Readable: NodeReadable } = require('stream');
-    const webWritable = NodeWritable.toWeb(this.mockChildData.stdin) as WritableStream<Uint8Array>;
-    const webReadable = NodeReadable.toWeb(this.mockChildData.stdout) as ReadableStream<Uint8Array>;
+    this.childExitPromise = new Promise<void>((resolve) => {
+      this.child?.once('exit', () => {
+        resolve();
+      });
+    });
 
-    const { ndJsonStream } = require('@agentclientprotocol/sdk');
+    const webWritable = Writable.toWeb(this.mockChildData.stdin) as WritableStream<Uint8Array>;
+    const webReadable = Readable.toWeb(this.mockChildData.stdout) as ReadableStream<Uint8Array>;
     const stream = ndJsonStream(webWritable, webReadable);
 
     this.acpStream = stream;
     return { child: this.child, stream };
   }
+}
+
+/** spawn 단계에서 즉시 실패시키는 테스트 연결 */
+class BrokenAcpConnection extends AcpConnection {
+  protected override spawnProcess(): never {
+    throw new Error('spawn 실패');
+  }
+}
+
+async function setupConnectedConnection(
+  connection: TestableAcpConnection,
+  mock: ReturnType<typeof createMockChild>,
+  sessionId = 'session-1',
+): Promise<void> {
+  const connectPromise = connection.connect('/test/workspace');
+  await wait();
+
+  const initReq = parseMessage(mock.stdin.written[0]);
+  mock.stdout.push(
+    `${JSON.stringify({
+      jsonrpc: '2.0',
+      id: initReq.id,
+      result: { protocolVersion: 1, agentCapabilities: {} },
+    })}\n`,
+  );
+
+  await wait();
+
+  const sessionReq = parseMessage(mock.stdin.written[1]);
+  mock.stdout.push(
+    `${JSON.stringify({
+      jsonrpc: '2.0',
+      id: sessionReq.id,
+      result: { sessionId },
+    })}\n`,
+  );
+
+  await connectPromise;
 }
 
 describe('AcpConnection', () => {
@@ -111,22 +158,22 @@ describe('AcpConnection', () => {
   });
 
   describe('connect', () => {
-    it('initialize → session/new 순서로 호출해야 합니다', async () => {
+    it('initialize → session/new 순서로 호출하고 clientCapabilities를 전달해야 합니다', async () => {
       const connectPromise = connection.connect('/test/workspace');
+      await wait();
 
-      // stdout에서 JSON-RPC 메시지를 가로채기 위해 약간 대기
-      await new Promise((r) => setTimeout(r, 100));
-
-      // initialize 요청 확인
-      expect(mock.stdin.written.length).toBeGreaterThanOrEqual(1);
-      const initReq = JSON.parse(mock.stdin.written[0].replace('\n', ''));
+      const initReq = parseMessage(mock.stdin.written[0]);
       expect(initReq.method).toBe('initialize');
-      expect(initReq.params.protocolVersion).toBe(1);
-      expect(initReq.params.clientInfo.name).toBe('TestApp');
+      expect((initReq.params as Record<string, unknown>).protocolVersion).toBe(1);
+      expect(((initReq.params as Record<string, unknown>).clientInfo as Record<string, unknown>).name).toBe('TestApp');
+      expect((initReq.params as Record<string, unknown>).clientCapabilities).toEqual({
+        fs: { readTextFile: true, writeTextFile: true },
+        permissions: true,
+        terminal: false,
+      });
 
-      // initialize 응답
       mock.stdout.push(
-        JSON.stringify({
+        `${JSON.stringify({
           jsonrpc: '2.0',
           id: initReq.id,
           result: {
@@ -134,150 +181,353 @@ describe('AcpConnection', () => {
             agentCapabilities: {},
             serverInfo: { name: 'TestAgent', version: '1.0.0' },
           },
-        }) + '\n',
+        })}\n`,
       );
 
-      await new Promise((r) => setTimeout(r, 100));
+      await wait();
 
-      // session/new 요청 확인
-      expect(mock.stdin.written.length).toBeGreaterThanOrEqual(2);
-      const sessionReq = JSON.parse(mock.stdin.written[1].replace('\n', ''));
+      const sessionReq = parseMessage(mock.stdin.written[1]);
       expect(sessionReq.method).toBe('session/new');
-      expect(sessionReq.params.cwd).toBe('/test/workspace');
+      expect((sessionReq.params as Record<string, unknown>).cwd).toBe('/test/workspace');
 
-      // session/new 응답
       mock.stdout.push(
-        JSON.stringify({
+        `${JSON.stringify({
           jsonrpc: '2.0',
           id: sessionReq.id,
           result: {
             sessionId: 'test-session-123',
           },
-        }) + '\n',
+        })}\n`,
       );
 
       const session = await connectPromise;
-
       expect(session.sessionId).toBe('test-session-123');
       expect(connection.connectionState).toBe('ready');
+    });
+
+    it('initialize 실패 시 connect가 reject 되어야 합니다', async () => {
+      const connectPromise = connection.connect('/test/workspace');
+      await wait();
+
+      const initReq = parseMessage(mock.stdin.written[0]);
+      mock.stdout.push(
+        `${JSON.stringify({
+          jsonrpc: '2.0',
+          id: initReq.id,
+          error: { code: -32603, message: 'initialize failed' },
+        })}\n`,
+      );
+
+      await expect(connectPromise).rejects.toThrow('initialize failed');
+    });
+
+    it('newSession 실패 시 connect가 reject 되어야 합니다', async () => {
+      const connectPromise = connection.connect('/test/workspace');
+      await wait();
+
+      const initReq = parseMessage(mock.stdin.written[0]);
+      mock.stdout.push(
+        `${JSON.stringify({
+          jsonrpc: '2.0',
+          id: initReq.id,
+          result: { protocolVersion: 1, agentCapabilities: {} },
+        })}\n`,
+      );
+
+      await wait();
+
+      const sessionReq = parseMessage(mock.stdin.written[1]);
+      mock.stdout.push(
+        `${JSON.stringify({
+          jsonrpc: '2.0',
+          id: sessionReq.id,
+          error: { code: -32603, message: 'session new failed' },
+        })}\n`,
+      );
+
+      await expect(connectPromise).rejects.toThrow('session new failed');
+    });
+
+    it('spawn 실패 시 connect가 reject 되어야 합니다', async () => {
+      const broken = new BrokenAcpConnection(defaultOptions);
+      await expect(broken.connect('/test/workspace')).rejects.toThrow('spawn 실패');
+    });
+
+    it('initTimeout 내 initialize 응답이 없으면 타임아웃되어야 합니다', async () => {
+      const timeoutConnection = new TestableAcpConnection({
+        ...defaultOptions,
+        initTimeout: 100,
+      });
+      timeoutConnection.setMockChild(createMockChild());
+
+      await expect(timeoutConnection.connect('/test/workspace')).rejects.toThrow('initialize 요청이 100ms 내에 완료되지 않았습니다');
+
+      await timeoutConnection.disconnect();
     });
   });
 
   describe('sendPrompt', () => {
-    it('session/prompt 요청을 올바르게 보내야 합니다', async () => {
-      // 연결 설정 (빠르게) — connect 과정 시뮬레이션
-      const connectPromise = connection.connect('/test/workspace');
-      await new Promise((r) => setTimeout(r, 100));
+    it('session/prompt 요청을 올바르게 보내고 응답을 반환해야 합니다', async () => {
+      await setupConnectedConnection(connection, mock);
 
-      // initialize 응답
-      const initReq = JSON.parse(mock.stdin.written[0].replace('\n', ''));
-      mock.stdout.push(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          id: initReq.id,
-          result: { protocolVersion: 1, agentCapabilities: {} },
-        }) + '\n',
-      );
-      await new Promise((r) => setTimeout(r, 100));
-
-      // session/new 응답
-      const sessionReq = JSON.parse(mock.stdin.written[1].replace('\n', ''));
-      mock.stdout.push(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          id: sessionReq.id,
-          result: { sessionId: 'session-1' },
-        }) + '\n',
-      );
-      await connectPromise;
-
-      // 프롬프트 전송
       const promptPromise = connection.sendPrompt('session-1', '안녕하세요');
-      await new Promise((r) => setTimeout(r, 100));
+      await wait();
 
-      // 프롬프트 요청 확인
-      const promptReq = JSON.parse(mock.stdin.written[2].replace('\n', ''));
+      const promptReq = parseMessage(mock.stdin.written[2]);
       expect(promptReq.method).toBe('session/prompt');
-      expect(promptReq.params.sessionId).toBe('session-1');
-      expect(promptReq.params.prompt).toEqual([{ type: 'text', text: '안녕하세요' }]);
+      expect((promptReq.params as Record<string, unknown>).sessionId).toBe('session-1');
+      expect((promptReq.params as Record<string, unknown>).prompt).toEqual([{ type: 'text', text: '안녕하세요' }]);
 
-      // 프롬프트 응답
       mock.stdout.push(
-        JSON.stringify({
+        `${JSON.stringify({
           jsonrpc: '2.0',
           id: promptReq.id,
           result: { stopReason: 'endTurn' },
-        }) + '\n',
+        })}\n`,
       );
 
       const response = await promptPromise;
       expect(response.stopReason).toBe('endTurn');
     });
+
+    it('ContentBlock 배열 입력을 그대로 전달해야 합니다', async () => {
+      await setupConnectedConnection(connection, mock);
+
+      const promptBlocks = [{ type: 'text', text: '멀티모달 테스트' }] as const;
+      const promptPromise = connection.sendPrompt('session-1', promptBlocks as unknown as Array<{ type: 'text'; text: string }>);
+      await wait();
+
+      const promptReq = parseMessage(mock.stdin.written[2]);
+      expect((promptReq.params as Record<string, unknown>).prompt).toEqual(promptBlocks);
+
+      mock.stdout.push(
+        `${JSON.stringify({
+          jsonrpc: '2.0',
+          id: promptReq.id,
+          result: { stopReason: 'endTurn' },
+        })}\n`,
+      );
+
+      await promptPromise;
+    });
+
+    it('requestTimeout 내 prompt 응답이 없으면 타임아웃되어야 합니다', async () => {
+      const timeoutConnection = new TestableAcpConnection({
+        ...defaultOptions,
+        requestTimeout: 100,
+      });
+      const timeoutMock = createMockChild();
+      timeoutConnection.setMockChild(timeoutMock);
+
+      await setupConnectedConnection(timeoutConnection, timeoutMock);
+
+      await expect(timeoutConnection.sendPrompt('session-1', 'timeout test')).rejects.toThrow('session/prompt 요청이 100ms 내에 완료되지 않았습니다');
+
+      await timeoutConnection.disconnect();
+    });
+
+    it('응답 완료 후 promptComplete 이벤트를 발생시켜야 합니다', async () => {
+      await setupConnectedConnection(connection, mock);
+
+      const completed: string[] = [];
+      connection.on('promptComplete', (sessionId) => {
+        completed.push(sessionId);
+      });
+
+      const promptPromise = connection.sendPrompt('session-1', '완료 이벤트 테스트');
+      await wait();
+
+      const promptReq = parseMessage(mock.stdin.written[2]);
+      mock.stdout.push(
+        `${JSON.stringify({
+          jsonrpc: '2.0',
+          id: promptReq.id,
+          result: { stopReason: 'endTurn' },
+        })}\n`,
+      );
+
+      await promptPromise;
+      expect(completed).toEqual(['session-1']);
+    });
   });
 
-  describe('session/update 이벤트', () => {
-    // connect 헬퍼
-    async function setupConnection() {
-      const connectPromise = connection.connect('/test/workspace');
-      await new Promise((r) => setTimeout(r, 100));
+  describe('세션 관련 RPC', () => {
+    it('cancelSession은 session/cancel notification을 전송해야 합니다', async () => {
+      await setupConnectedConnection(connection, mock);
 
-      const initReq = JSON.parse(mock.stdin.written[0].replace('\n', ''));
-      mock.stdout.push(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          id: initReq.id,
-          result: { protocolVersion: 1, agentCapabilities: {} },
-        }) + '\n',
-      );
-      await new Promise((r) => setTimeout(r, 100));
+      await connection.cancelSession('session-1');
+      await wait();
 
-      const sessionReq = JSON.parse(mock.stdin.written[1].replace('\n', ''));
-      mock.stdout.push(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          id: sessionReq.id,
-          result: { sessionId: 's1' },
-        }) + '\n',
-      );
-      await connectPromise;
-    }
+      const cancelMsg = parseMessage(mock.stdin.written[2]);
+      expect(cancelMsg.method).toBe('session/cancel');
+      expect(cancelMsg.params).toEqual({ sessionId: 'session-1' });
+      expect(cancelMsg.id).toBeUndefined();
+    });
 
-    it('agent_message_chunk 이벤트를 발생시켜야 합니다', async () => {
-      await setupConnection();
+    it('loadSession은 session/load 요청을 전송해야 합니다', async () => {
+      await setupConnectedConnection(connection, mock);
 
-      const chunks: string[] = [];
-      connection.on('messageChunk', (text: string) => {
-        chunks.push(text);
+      const loadPromise = connection.loadSession({
+        sessionId: 'prev-session',
+        cwd: '/test/workspace',
+        mcpServers: [],
+      });
+      await wait();
+
+      const loadReq = parseMessage(mock.stdin.written[2]);
+      expect(loadReq.method).toBe('session/load');
+      expect(loadReq.params).toEqual({
+        sessionId: 'prev-session',
+        cwd: '/test/workspace',
+        mcpServers: [],
       });
 
       mock.stdout.push(
-        JSON.stringify({
+        `${JSON.stringify({
+          jsonrpc: '2.0',
+          id: loadReq.id,
+          result: {},
+        })}\n`,
+      );
+
+      const loaded = await loadPromise;
+      expect(loaded).toEqual({});
+    });
+
+    it('setConfigOption은 session/set_config_option 요청을 전송해야 합니다', async () => {
+      await setupConnectedConnection(connection, mock);
+
+      const configPromise = connection.setConfigOption('session-1', 'model', 'haiku');
+      await wait();
+
+      const configReq = parseMessage(mock.stdin.written[2]);
+      expect(configReq.method).toBe('session/set_config_option');
+      expect(configReq.params).toEqual({
+        sessionId: 'session-1',
+        configId: 'model',
+        value: 'haiku',
+      });
+
+      mock.stdout.push(
+        `${JSON.stringify({
+          jsonrpc: '2.0',
+          id: configReq.id,
+          result: { configOptions: [] },
+        })}\n`,
+      );
+
+      await configPromise;
+    });
+
+    it('setMode는 session/set_mode 요청을 전송해야 합니다', async () => {
+      await setupConnectedConnection(connection, mock);
+
+      const modePromise = connection.setMode('session-1', 'bypassPermissions');
+      await wait();
+
+      const modeReq = parseMessage(mock.stdin.written[2]);
+      expect(modeReq.method).toBe('session/set_mode');
+      expect(modeReq.params).toEqual({
+        sessionId: 'session-1',
+        modeId: 'bypassPermissions',
+      });
+
+      mock.stdout.push(
+        `${JSON.stringify({
+          jsonrpc: '2.0',
+          id: modeReq.id,
+          result: {},
+        })}\n`,
+      );
+
+      await modePromise;
+    });
+
+    it('연결 전 cancelSession 호출 시 에러가 발생해야 합니다', async () => {
+      const notConnected = new AcpConnection(defaultOptions);
+      await expect(notConnected.cancelSession('x')).rejects.toThrow('ACP 연결이 설정되지 않았습니다');
+    });
+
+    it('loadSession 미지원 Agent면 명확한 에러를 반환해야 합니다', async () => {
+      await setupConnectedConnection(connection, mock);
+
+      const agentProxy = connection.getAgentProxy() as { loadSession?: unknown };
+      agentProxy.loadSession = undefined;
+
+      await expect(
+        connection.loadSession({ sessionId: 's1', cwd: '/tmp', mcpServers: [] }),
+      ).rejects.toThrow('session/load를 지원하지 않습니다');
+    });
+  });
+
+  describe('session/update 이벤트', () => {
+    it('agent/user/thought chunk 이벤트를 분리해서 발생시켜야 합니다', async () => {
+      await setupConnectedConnection(connection, mock, 's1');
+
+      const agentChunks: string[] = [];
+      const userChunks: string[] = [];
+      const thoughtChunks: string[] = [];
+
+      connection.on('messageChunk', (text) => {
+        agentChunks.push(text);
+      });
+      connection.on('userMessageChunk', (text) => {
+        userChunks.push(text);
+      });
+      connection.on('thoughtChunk', (text) => {
+        thoughtChunks.push(text);
+      });
+
+      mock.stdout.push(
+        `${JSON.stringify({
           jsonrpc: '2.0',
           method: 'session/update',
           params: {
             sessionId: 's1',
-            update: {
-              sessionUpdate: 'agent_message_chunk',
-              content: { type: 'text', text: 'Hello' },
-            },
+            update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: '사용자 입력' } },
           },
-        }) + '\n',
+        })}\n`,
       );
 
-      await new Promise((r) => setTimeout(r, 100));
-      expect(chunks).toEqual(['Hello']);
+      mock.stdout.push(
+        `${JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'session/update',
+          params: {
+            sessionId: 's1',
+            update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '에이전트 응답' } },
+          },
+        })}\n`,
+      );
+
+      mock.stdout.push(
+        `${JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'session/update',
+          params: {
+            sessionId: 's1',
+            update: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '추론 중' } },
+          },
+        })}\n`,
+      );
+
+      await wait();
+
+      expect(userChunks).toEqual(['사용자 입력']);
+      expect(agentChunks).toEqual(['에이전트 응답']);
+      expect(thoughtChunks).toEqual(['추론 중']);
     });
 
     it('tool_call 이벤트를 발생시켜야 합니다', async () => {
-      await setupConnection();
+      await setupConnectedConnection(connection, mock, 's1');
 
       const calls: Array<{ title: string; status: string }> = [];
-      connection.on('toolCall', (title: string, status: string) => {
+      connection.on('toolCall', (title, status) => {
         calls.push({ title, status });
       });
 
       mock.stdout.push(
-        JSON.stringify({
+        `${JSON.stringify({
           jsonrpc: '2.0',
           method: 'session/update',
           params: {
@@ -289,70 +539,18 @@ describe('AcpConnection', () => {
               status: 'pending',
             },
           },
-        }) + '\n',
+        })}\n`,
       );
 
-      await new Promise((r) => setTimeout(r, 100));
+      await wait();
       expect(calls).toEqual([{ title: 'read_file', status: 'pending' }]);
-    });
-
-    it('agent_thought_chunk 이벤트를 발생시켜야 합니다', async () => {
-      await setupConnection();
-
-      const thoughts: string[] = [];
-      connection.on('thoughtChunk', (text: string) => {
-        thoughts.push(text);
-      });
-
-      mock.stdout.push(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'session/update',
-          params: {
-            sessionId: 's1',
-            update: {
-              sessionUpdate: 'agent_thought_chunk',
-              content: { type: 'text', text: '문제를 분석 중...' },
-            },
-          },
-        }) + '\n',
-      );
-
-      await new Promise((r) => setTimeout(r, 100));
-      expect(thoughts).toEqual(['문제를 분석 중...']);
     });
   });
 
   describe('session/request_permission', () => {
-    async function setupConnection() {
-      const connectPromise = connection.connect('/test/workspace');
-      await new Promise((r) => setTimeout(r, 100));
-
-      const initReq = JSON.parse(mock.stdin.written[0].replace('\n', ''));
-      mock.stdout.push(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          id: initReq.id,
-          result: { protocolVersion: 1, agentCapabilities: {} },
-        }) + '\n',
-      );
-      await new Promise((r) => setTimeout(r, 100));
-
-      const sessionReq = JSON.parse(mock.stdin.written[1].replace('\n', ''));
-      mock.stdout.push(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          id: sessionReq.id,
-          result: { sessionId: 's1' },
-        }) + '\n',
-      );
-      return connectPromise;
-    }
-
     it('권한 요청 이벤트를 발생시키고 응답을 전송해야 합니다', async () => {
-      await setupConnection();
+      await setupConnectedConnection(connection, mock, 's1');
 
-      // 이벤트 리스너 등록 — 콜백으로 응답
       connection.on('permissionRequest', (params: RequestPermissionRequest, resolve: (response: RequestPermissionResponse) => void) => {
         resolve({
           outcome: {
@@ -362,9 +560,8 @@ describe('AcpConnection', () => {
         });
       });
 
-      // 권한 요청 서버 → 클라이언트
       mock.stdout.push(
-        JSON.stringify({
+        `${JSON.stringify({
           jsonrpc: '2.0',
           id: 42,
           method: 'session/request_permission',
@@ -376,58 +573,33 @@ describe('AcpConnection', () => {
               { optionId: 'deny', name: '거부', kind: 'reject_once' },
             ],
           },
-        }) + '\n',
+        })}\n`,
       );
 
-      await new Promise((r) => setTimeout(r, 200));
+      await wait(200);
 
-      // 응답이 stdin에 작성되었는지 확인
-      const responses = mock.stdin.written.filter((w) => {
-        try {
-          const msg = JSON.parse(w.replace('\n', ''));
-          return msg.id === 42 && msg.result;
-        } catch { return false; }
+      const response = mock.stdin.written
+        .map((raw) => parseMessage(raw))
+        .find((msg) => msg.id === 42 && msg.result !== undefined);
+
+      expect(response).toBeDefined();
+      expect((response?.result as Record<string, unknown>).outcome).toEqual({
+        outcome: 'selected',
+        optionId: 'allow',
       });
-      expect(responses.length).toBe(1);
-      const response = JSON.parse(responses[0].replace('\n', ''));
-      expect(response.result.outcome.outcome).toBe('selected');
-      expect(response.result.outcome.optionId).toBe('allow');
     });
 
-    it('autoApprove가 활성화되면 자동으로 첫 번째 옵션을 선택해야 합니다', async () => {
-      // autoApprove 활성화된 연결 생성
+    it('autoApprove가 활성화되면 첫 번째 옵션을 자동 선택해야 합니다', async () => {
       const autoConnection = new TestableAcpConnection({
         ...defaultOptions,
         autoApprove: true,
       });
       autoConnection.setMockChild(mock);
 
-      const connectPromise = autoConnection.connect('/test/workspace');
-      await new Promise((r) => setTimeout(r, 100));
+      await setupConnectedConnection(autoConnection, mock, 's1');
 
-      const initReq = JSON.parse(mock.stdin.written[0].replace('\n', ''));
       mock.stdout.push(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          id: initReq.id,
-          result: { protocolVersion: 1, agentCapabilities: {} },
-        }) + '\n',
-      );
-      await new Promise((r) => setTimeout(r, 100));
-
-      const sessionReq = JSON.parse(mock.stdin.written[1].replace('\n', ''));
-      mock.stdout.push(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          id: sessionReq.id,
-          result: { sessionId: 's1' },
-        }) + '\n',
-      );
-      await connectPromise;
-
-      // 권한 요청
-      mock.stdout.push(
-        JSON.stringify({
+        `${JSON.stringify({
           jsonrpc: '2.0',
           id: 99,
           method: 'session/request_permission',
@@ -436,70 +608,89 @@ describe('AcpConnection', () => {
             toolCall: { toolCallId: 'tc1', title: '파일 실행', status: 'pending' },
             options: [{ optionId: 'auto-allow', name: '허용', kind: 'allow_once' }],
           },
-        }) + '\n',
+        })}\n`,
       );
 
-      await new Promise((r) => setTimeout(r, 200));
+      await wait(200);
 
-      // 자동 응답 확인
-      const responses = mock.stdin.written.filter((w) => {
-        try {
-          const msg = JSON.parse(w.replace('\n', ''));
-          return msg.id === 99 && msg.result;
-        } catch { return false; }
+      const response = mock.stdin.written
+        .map((raw) => parseMessage(raw))
+        .find((msg) => msg.id === 99 && msg.result !== undefined);
+
+      expect(response).toBeDefined();
+      expect((response?.result as Record<string, unknown>).outcome).toEqual({
+        outcome: 'selected',
+        optionId: 'auto-allow',
       });
-      expect(responses.length).toBe(1);
-      const response = JSON.parse(responses[0].replace('\n', ''));
-      expect(response.result.outcome.outcome).toBe('selected');
-      expect(response.result.outcome.optionId).toBe('auto-allow');
 
       await autoConnection.disconnect();
     });
+
+    it('cancelSession은 대기 중인 권한 요청을 cancelled로 종료해야 합니다', async () => {
+      await setupConnectedConnection(connection, mock, 's1');
+
+      mock.stdout.push(
+        `${JSON.stringify({
+          jsonrpc: '2.0',
+          id: 123,
+          method: 'session/request_permission',
+          params: {
+            sessionId: 's1',
+            toolCall: { toolCallId: 'tc1', title: '파일 실행', status: 'pending' },
+            options: [{ optionId: 'allow', name: '허용', kind: 'allow_once' }],
+          },
+        })}\n`,
+      );
+
+      await wait();
+      await connection.cancelSession('s1');
+      await wait(200);
+
+      const permissionResponse = mock.stdin.written
+        .map((raw) => parseMessage(raw))
+        .find((msg) => msg.id === 123 && msg.result !== undefined);
+
+      expect(permissionResponse).toBeDefined();
+      expect((permissionResponse?.result as Record<string, unknown>).outcome).toEqual({
+        outcome: 'cancelled',
+      });
+
+      const cancelMessage = mock.stdin.written
+        .map((raw) => parseMessage(raw))
+        .find((msg) => msg.method === 'session/cancel');
+
+      expect(cancelMessage).toBeDefined();
+      expect(cancelMessage?.params).toEqual({ sessionId: 's1' });
+    });
   });
 
-  describe('setMode', () => {
-    it('session/set_mode 요청을 보내야 합니다', async () => {
-      const connectPromise = connection.connect('/test/workspace');
-      await new Promise((r) => setTimeout(r, 100));
+  describe('terminal 스텁', () => {
+    it('terminal/create 요청 시 미지원 에러를 반환해야 합니다', async () => {
+      await setupConnectedConnection(connection, mock, 's1');
 
-      const initReq = JSON.parse(mock.stdin.written[0].replace('\n', ''));
       mock.stdout.push(
-        JSON.stringify({
+        `${JSON.stringify({
           jsonrpc: '2.0',
-          id: initReq.id,
-          result: { protocolVersion: 1, agentCapabilities: {} },
-        }) + '\n',
-      );
-      await new Promise((r) => setTimeout(r, 100));
-
-      const sessionReq = JSON.parse(mock.stdin.written[1].replace('\n', ''));
-      mock.stdout.push(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          id: sessionReq.id,
-          result: { sessionId: 'session-1' },
-        }) + '\n',
-      );
-      await connectPromise;
-
-      const modePromise = connection.setMode('session-1', 'bypassPermissions');
-      await new Promise((r) => setTimeout(r, 100));
-
-      const modeReq = JSON.parse(mock.stdin.written[2].replace('\n', ''));
-      expect(modeReq.method).toBe('session/set_mode');
-      expect(modeReq.params.sessionId).toBe('session-1');
-      expect(modeReq.params.modeId).toBe('bypassPermissions');
-
-      // 응답
-      mock.stdout.push(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          id: modeReq.id,
-          result: {},
-        }) + '\n',
+          id: 777,
+          method: 'terminal/create',
+          params: {
+            sessionId: 's1',
+            command: 'echo',
+            args: ['hello'],
+          },
+        })}\n`,
       );
 
-      await modePromise;
+      await wait();
+
+      const response = mock.stdin.written
+        .map((raw) => parseMessage(raw))
+        .find((msg) => msg.id === 777 && msg.error !== undefined);
+
+      expect(response).toBeDefined();
+      const error = response?.error as Record<string, unknown>;
+      expect(error.message).toBe('Internal error');
+      expect((error.data as Record<string, unknown>).details).toBe('terminal/create는 현재 지원되지 않습니다');
     });
   });
 });

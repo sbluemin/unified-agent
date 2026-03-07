@@ -8,6 +8,7 @@ import {
   type Client,
   type Agent,
   type SessionNotification,
+  type SessionUpdate,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
   type ReadTextFileRequest,
@@ -15,8 +16,22 @@ import {
   type WriteTextFileRequest,
   type WriteTextFileResponse,
   type NewSessionResponse,
+  type LoadSessionRequest,
+  type LoadSessionResponse,
   type PromptResponse,
+  type ContentBlock,
+  type CreateTerminalRequest,
+  type CreateTerminalResponse,
+  type TerminalOutputRequest,
+  type TerminalOutputResponse,
+  type ReleaseTerminalRequest,
+  type ReleaseTerminalResponse,
+  type WaitForTerminalExitRequest,
+  type WaitForTerminalExitResponse,
+  type KillTerminalCommandRequest,
+  type KillTerminalCommandResponse,
 } from '@agentclientprotocol/sdk';
+import type { ConnectionState } from '../types/common.js';
 import { BaseConnection, type BaseConnectionOptions } from './BaseConnection.js';
 
 /** AcpConnection 생성 옵션 */
@@ -34,6 +49,7 @@ export interface AcpConnectionOptions extends BaseConnectionOptions {
 
 /** AcpConnection 이벤트 맵 */
 export interface AcpConnectionEventMap {
+  userMessageChunk: [text: string, sessionId: string];
   messageChunk: [text: string, sessionId: string];
   thoughtChunk: [text: string, sessionId: string];
   toolCall: [title: string, status: string, sessionId: string];
@@ -46,6 +62,16 @@ export interface AcpConnectionEventMap {
   promptComplete: [sessionId: string];
 }
 
+/** BaseConnection에서 상속되는 공통 이벤트 맵 */
+interface BaseConnectionEventMap {
+  stateChange: [state: ConnectionState];
+  error: [error: Error];
+  exit: [code: number | null, signal: string | null];
+  log: [message: string];
+}
+
+type AcpConnectionEvents = BaseConnectionEventMap & AcpConnectionEventMap;
+
 /**
  * ACP 프로토콜 연결 클래스.
  * 공식 ACP SDK의 ClientSideConnection을 래핑하여 통합 이벤트 인터페이스를 제공합니다.
@@ -55,6 +81,9 @@ export class AcpConnection extends BaseConnection {
   private readonly protocolVersion: number;
   private readonly autoApprove: boolean;
   private agentProxy: Agent | null = null;
+  private readonly pendingPermissionRequests = new Set<(
+    response: RequestPermissionResponse,
+  ) => void>();
 
   constructor(options: AcpConnectionOptions) {
     super(options);
@@ -64,6 +93,38 @@ export class AcpConnection extends BaseConnection {
     };
     this.protocolVersion = options.protocolVersion ?? 1;
     this.autoApprove = options.autoApprove ?? false;
+  }
+
+  /** 타입 안전한 이벤트 리스너 등록 */
+  on<K extends keyof AcpConnectionEvents>(
+    event: K,
+    listener: (...args: AcpConnectionEvents[K]) => void,
+  ): this {
+    return super.on(event, listener);
+  }
+
+  /** 타입 안전한 1회성 이벤트 리스너 등록 */
+  once<K extends keyof AcpConnectionEvents>(
+    event: K,
+    listener: (...args: AcpConnectionEvents[K]) => void,
+  ): this {
+    return super.once(event, listener);
+  }
+
+  /** 타입 안전한 이벤트 리스너 해제 */
+  off<K extends keyof AcpConnectionEvents>(
+    event: K,
+    listener: (...args: AcpConnectionEvents[K]) => void,
+  ): this {
+    return super.off(event, listener);
+  }
+
+  /** 타입 안전한 이벤트 발생 */
+  emit<K extends keyof AcpConnectionEvents>(
+    event: K,
+    ...args: AcpConnectionEvents[K]
+  ): boolean {
+    return super.emit(event, ...args);
   }
 
   /**
@@ -93,40 +154,113 @@ export class AcpConnection extends BaseConnection {
       this.setState('closed');
     });
 
-    // 3. initialize 요청 (공식 SDK 타입: clientCapabilities, clientInfo)
-    await this.agentProxy!.initialize({
-      protocolVersion: this.protocolVersion,
-      clientCapabilities: {},
-      clientInfo: this.clientInfo,
-    });
+    const clientCapabilities = {
+      fs: {
+        readTextFile: true,
+        writeTextFile: true,
+      },
+      permissions: true,
+      terminal: false,
+    } as unknown as Parameters<Agent['initialize']>[0]['clientCapabilities'];
 
-    // 4. 세션 생성 (공식 ACP 스키마: cwd + mcpServers)
-    const session = await this.agentProxy!.newSession({
-      cwd: workspace,
-      mcpServers: [],
-    });
+    const agent = this.getAgent();
 
-    this.setState('ready');
-    return session;
+    try {
+      // 3. initialize 요청 (공식 SDK 타입: clientCapabilities, clientInfo)
+      await this.withTimeout(
+        agent.initialize({
+          protocolVersion: this.protocolVersion,
+          clientCapabilities,
+          clientInfo: this.clientInfo,
+        }),
+        this.initTimeout,
+        'initialize',
+      );
+
+      // 4. 세션 생성 (공식 ACP 스키마: cwd + mcpServers)
+      const session = await this.withTimeout(
+        agent.newSession({
+          cwd: workspace,
+          mcpServers: [],
+        }),
+        this.initTimeout,
+        'session/new',
+      );
+
+      this.setState('ready');
+      return session;
+    } catch (error) {
+      this.setState('error');
+      throw error;
+    }
+  }
+
+  /**
+   * 기존 세션을 로드합니다.
+   *
+   * @param params - 세션 로드 파라미터
+   * @returns 세션 정보
+   */
+  async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
+    const agent = this.getAgent();
+    if (!agent.loadSession) {
+      throw new Error('연결된 에이전트가 session/load를 지원하지 않습니다');
+    }
+
+    return this.withTimeout(
+      agent.loadSession(params),
+      this.requestTimeout,
+      'session/load',
+    );
+  }
+
+  override async disconnect(): Promise<void> {
+    this.cancelPendingPermissionRequests();
+    await super.disconnect();
   }
 
   /**
    * 메시지를 전송합니다.
    *
    * @param sessionId - 세션 ID
-   * @param content - 메시지 내용
+   * @param content - 메시지 내용 (텍스트 또는 ACP ContentBlock 배열)
    */
   async sendPrompt(
     sessionId: string,
-    content: string,
+    content: string | ContentBlock[],
   ): Promise<PromptResponse> {
-    if (!this.agentProxy) {
-      throw new Error('ACP 연결이 설정되지 않았습니다');
-    }
-    return this.agentProxy.prompt({
-      sessionId,
-      prompt: [{ type: 'text', text: content }],
-    });
+    const agent = this.getAgent();
+
+    const prompt = typeof content === 'string'
+      ? ([{ type: 'text', text: content }] as Array<Extract<ContentBlock, { type: 'text' }>>)
+      : content;
+
+    const response = await this.withTimeout(
+      agent.prompt({
+        sessionId,
+        prompt,
+      }),
+      this.requestTimeout,
+      'session/prompt',
+    );
+
+    this.emit('promptComplete', sessionId);
+    return response;
+  }
+
+  /**
+   * 현재 세션의 진행 중인 프롬프트를 취소합니다.
+   *
+   * @param sessionId - 세션 ID
+   */
+  async cancelSession(sessionId: string): Promise<void> {
+    const agent = this.getAgent();
+    this.cancelPendingPermissionRequests();
+    await this.withTimeout(
+      agent.cancel({ sessionId }),
+      this.requestTimeout,
+      'session/cancel',
+    );
   }
 
   /**
@@ -140,10 +274,12 @@ export class AcpConnection extends BaseConnection {
     sessionId: string,
     mode: string = 'bypassPermissions',
   ): Promise<void> {
-    if (!this.agentProxy) {
-      throw new Error('ACP 연결이 설정되지 않았습니다');
-    }
-    await this.agentProxy.setSessionMode?.({ sessionId, modeId: mode });
+    const agent = this.getAgent();
+    await this.withTimeout(
+      agent.setSessionMode?.({ sessionId, modeId: mode }),
+      this.requestTimeout,
+      'session/set_mode',
+    );
   }
 
   /**
@@ -154,12 +290,15 @@ export class AcpConnection extends BaseConnection {
    * @param model - 모델 이름
    */
   async setModel(sessionId: string, model: string): Promise<void> {
-    if (!this.agentProxy) {
-      throw new Error('ACP 연결이 설정되지 않았습니다');
-    }
+    const agent = this.getAgent();
+
     try {
       // Primary: session/set_model
-      await this.agentProxy.unstable_setSessionModel?.({ sessionId, modelId: model });
+      await this.withTimeout(
+        agent.unstable_setSessionModel?.({ sessionId, modelId: model }),
+        this.requestTimeout,
+        'session/set_model',
+      );
     } catch {
       // Fallback: session/set_config_option
       await this.setConfigOption(sessionId, 'model', model);
@@ -179,10 +318,12 @@ export class AcpConnection extends BaseConnection {
     configId: string,
     value: string,
   ): Promise<void> {
-    if (!this.agentProxy) {
-      throw new Error('ACP 연결이 설정되지 않았습니다');
-    }
-    await this.agentProxy.setSessionConfigOption?.({ sessionId, configId, value });
+    const agent = this.getAgent();
+    await this.withTimeout(
+      agent.setSessionConfigOption?.({ sessionId, configId, value }),
+      this.requestTimeout,
+      'session/set_config_option',
+    );
   }
 
   /**
@@ -205,7 +346,13 @@ export class AcpConnection extends BaseConnection {
 
         // 이벤트로 전파하고 응답 대기
         return new Promise<RequestPermissionResponse>((resolve) => {
-          this.emit('permissionRequest', params, resolve);
+          const trackedResolve = (response: RequestPermissionResponse): void => {
+            this.pendingPermissionRequests.delete(trackedResolve);
+            resolve(response);
+          };
+
+          this.pendingPermissionRequests.add(trackedResolve);
+          this.emit('permissionRequest', params, trackedResolve);
         });
       },
 
@@ -228,6 +375,23 @@ export class AcpConnection extends BaseConnection {
           this.emit('fileWrite', params, resolve);
         });
       },
+
+      // 터미널 API는 아직 미지원
+      createTerminal: async (_params: CreateTerminalRequest): Promise<CreateTerminalResponse> => {
+        throw new Error('terminal/create는 현재 지원되지 않습니다');
+      },
+      terminalOutput: async (_params: TerminalOutputRequest): Promise<TerminalOutputResponse> => {
+        throw new Error('terminal/output은 현재 지원되지 않습니다');
+      },
+      releaseTerminal: async (_params: ReleaseTerminalRequest): Promise<ReleaseTerminalResponse> => {
+        throw new Error('terminal/release는 현재 지원되지 않습니다');
+      },
+      waitForTerminalExit: async (_params: WaitForTerminalExitRequest): Promise<WaitForTerminalExitResponse> => {
+        throw new Error('terminal/wait_for_exit는 현재 지원되지 않습니다');
+      },
+      killTerminal: async (_params: KillTerminalCommandRequest): Promise<KillTerminalCommandResponse> => {
+        throw new Error('terminal/kill은 현재 지원되지 않습니다');
+      },
     };
   }
 
@@ -241,21 +405,18 @@ export class AcpConnection extends BaseConnection {
     const sessionId = notification.sessionId;
 
     switch (update.sessionUpdate) {
-      case 'agent_message_chunk':
       case 'user_message_chunk': {
-        // ContentChunk.content는 ContentBlock (TextContent | ImageContent | ...)
-        const content = update.content as Record<string, unknown>;
-        if (content?.type === 'text' && typeof content?.text === 'string') {
-          this.emit('messageChunk', content.text, sessionId);
-        }
+        this.emitTextChunk('userMessageChunk', update, sessionId);
+        break;
+      }
+
+      case 'agent_message_chunk': {
+        this.emitTextChunk('messageChunk', update, sessionId);
         break;
       }
 
       case 'agent_thought_chunk': {
-        const content = update.content as Record<string, unknown>;
-        if (content?.type === 'text' && typeof content?.text === 'string') {
-          this.emit('thoughtChunk', content.text, sessionId);
-        }
+        this.emitTextChunk('thoughtChunk', update, sessionId);
         break;
       }
 
@@ -270,23 +431,100 @@ export class AcpConnection extends BaseConnection {
       }
 
       case 'tool_call_update': {
-        const toolUpdate = update as Record<string, unknown>;
         this.emit(
           'toolCallUpdate',
-          (toolUpdate.title as string) ?? '',
-          (toolUpdate.status as string) ?? '',
+          update.title ?? '',
+          update.status ?? '',
           sessionId,
         );
         break;
       }
 
       case 'plan': {
-        const entries = update.entries;
-        if (entries) {
-          this.emit('plan', JSON.stringify(entries), sessionId);
+        if (update.entries) {
+          this.emit('plan', JSON.stringify(update.entries), sessionId);
         }
         break;
       }
+
+      default:
+        break;
     }
+  }
+
+  /**
+   * ContentChunk에서 텍스트 청크를 추출하여 해당 이벤트로 전파합니다.
+   */
+  private emitTextChunk(
+    event: 'userMessageChunk' | 'messageChunk' | 'thoughtChunk',
+    update: Extract<SessionUpdate, { sessionUpdate: 'user_message_chunk' | 'agent_message_chunk' | 'agent_thought_chunk' }>,
+    sessionId: string,
+  ): void {
+    if (this.isTextContent(update.content)) {
+      this.emit(event, update.content.text, sessionId);
+    }
+  }
+
+  /**
+   * ContentBlock이 텍스트 블록인지 판별합니다.
+   */
+  private isTextContent(content: ContentBlock): content is Extract<ContentBlock, { type: 'text' }> {
+    return content.type === 'text' && typeof content.text === 'string';
+  }
+
+  private cancelPendingPermissionRequests(): void {
+    const pendingRequests = [...this.pendingPermissionRequests];
+    this.pendingPermissionRequests.clear();
+
+    for (const resolve of pendingRequests) {
+      resolve({
+        outcome: {
+          outcome: 'cancelled',
+        },
+      });
+    }
+  }
+
+  /**
+   * 연결된 Agent 프록시를 반환합니다.
+   */
+  private getAgent(): Agent {
+    if (!this.agentProxy) {
+      throw new Error('ACP 연결이 설정되지 않았습니다');
+    }
+    return this.agentProxy;
+  }
+
+  /**
+   * 지정 시간 내에 Promise가 완료되지 않으면 타임아웃 에러를 발생시킵니다.
+   */
+  private async withTimeout<T>(
+    promise: Promise<T> | undefined,
+    timeoutMs: number,
+    label: string,
+  ): Promise<T> {
+    if (!promise) {
+      throw new Error(`${label}를 지원하지 않는 에이전트입니다`);
+    }
+
+    if (timeoutMs <= 0) {
+      return promise;
+    }
+
+    return new Promise<T>((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        reject(new Error(`${label} 요청이 ${timeoutMs}ms 내에 완료되지 않았습니다`));
+      }, timeoutMs);
+
+      promise
+        .then((result) => {
+          clearTimeout(timeoutId);
+          resolve(result);
+        })
+        .catch((error: unknown) => {
+          clearTimeout(timeoutId);
+          reject(error);
+        });
+    });
   }
 }

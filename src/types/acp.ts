@@ -11,6 +11,9 @@ export type {
   InitializeResponse as AcpInitializeResult,
   NewSessionRequest as AcpSessionNewParams,
   NewSessionResponse as AcpSessionNewResult,
+  LoadSessionRequest as AcpSessionLoadParams,
+  LoadSessionResponse as AcpSessionLoadResult,
+  CancelNotification as AcpSessionCancelParams,
   PromptRequest as AcpSessionPromptParams,
   PromptResponse as AcpPromptResponse,
   SetSessionModeRequest as AcpSessionSetModeParams,
@@ -53,6 +56,7 @@ export type {
 
 /** session/update의 sessionUpdate 타입 (하위 호환) */
 export type AcpSessionUpdateType =
+  | 'user_message_chunk'
   | 'agent_message_chunk'
   | 'agent_thought_chunk'
   | 'tool_call'
