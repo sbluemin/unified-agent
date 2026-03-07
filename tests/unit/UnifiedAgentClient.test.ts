@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
   UnifiedAgentClient,
   AcpConnection,
@@ -45,6 +45,10 @@ describe('Public API Exports', () => {
 });
 
 describe('UnifiedAgentClient 인스턴스', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('인스턴스를 생성할 수 있어야 합니다', () => {
     const client = new UnifiedAgentClient();
     expect(client).toBeDefined();
@@ -54,6 +58,21 @@ describe('UnifiedAgentClient 인스턴스', () => {
   it('연결 없이 sendMessage 호출 시 에러가 발생해야 합니다', async () => {
     const client = new UnifiedAgentClient();
     await expect(client.sendMessage('test')).rejects.toThrow('연결되어 있지 않습니다');
+  });
+
+  it('연결 없이 cancelPrompt 호출 시 에러가 발생해야 합니다', async () => {
+    const client = new UnifiedAgentClient();
+    await expect(client.cancelPrompt()).rejects.toThrow('연결되어 있지 않습니다');
+  });
+
+  it('연결 없이 setConfigOption 호출 시 에러가 발생해야 합니다', async () => {
+    const client = new UnifiedAgentClient();
+    await expect(client.setConfigOption('model', 'haiku')).rejects.toThrow('연결되어 있지 않습니다');
+  });
+
+  it('연결 없이 loadSession 호출 시 에러가 발생해야 합니다', async () => {
+    const client = new UnifiedAgentClient();
+    await expect(client.loadSession('session-1')).rejects.toThrow('연결되어 있지 않습니다');
   });
 
   it('detectClis가 결과를 반환해야 합니다', async () => {
@@ -77,5 +96,32 @@ describe('UnifiedAgentClient 인스턴스', () => {
     const client = new UnifiedAgentClient();
     await client.disconnect();
     expect(client.getAvailableModels()).toBeNull();
+  });
+
+  it('connect 실패 시 부분적으로 생성된 연결을 정리해야 합니다', async () => {
+    const connectSpy = vi
+      .spyOn(AcpConnection.prototype, 'connect')
+      .mockRejectedValue(new Error('connect failed'));
+    const disconnectSpy = vi
+      .spyOn(AcpConnection.prototype, 'disconnect')
+      .mockResolvedValue();
+
+    const client = new UnifiedAgentClient();
+
+    await expect(
+      client.connect({
+        cwd: process.cwd(),
+        cli: 'gemini',
+      }),
+    ).rejects.toThrow('connect failed');
+
+    expect(connectSpy).toHaveBeenCalledTimes(1);
+    expect(disconnectSpy).toHaveBeenCalledTimes(1);
+    expect(client.getConnectionInfo()).toEqual({
+      cli: null,
+      protocol: null,
+      sessionId: null,
+      state: 'disconnected',
+    });
   });
 });

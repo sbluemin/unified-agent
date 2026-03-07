@@ -14,6 +14,7 @@ import type {
 } from '../types/config.js';
 import type {
   AcpSessionNewResult,
+  AcpContentBlock,
   AcpSessionUpdateParams,
   AcpPermissionRequestParams,
   AcpPermissionResponse,
@@ -23,6 +24,7 @@ import type {
   AcpFileWriteResponse,
 } from '../types/acp.js';
 import type { ConnectionState } from '../types/common.js';
+import type { PromptResponse } from '@agentclientprotocol/sdk';
 
 // ─── 이벤트 맵 ────────────────────────────────────────────
 
@@ -30,6 +32,8 @@ import type { ConnectionState } from '../types/common.js';
 export interface UnifiedClientEvents {
   /** 연결 상태 변경 */
   stateChange: [state: ConnectionState];
+  /** 사용자 메시지 청크 (스트리밍) */
+  userMessageChunk: [text: string, sessionId: string];
   /** AI 응답 텍스트 청크 (스트리밍) */
   messageChunk: [text: string, sessionId: string];
   /** AI 사고 과정 청크 */
@@ -46,6 +50,8 @@ export interface UnifiedClientEvents {
   fileRead: [params: AcpFileReadParams, resolve: (response: AcpFileReadResponse) => void];
   /** 파일 쓰기 요청 (콜백 기반 응답) */
   fileWrite: [params: AcpFileWriteParams, resolve: (response: AcpFileWriteResponse) => void];
+  /** 프롬프트 완료 */
+  promptComplete: [sessionId: string];
   /** 에러 */
   error: [error: Error];
   /** 프로세스 종료 */
@@ -107,6 +113,39 @@ export interface AvailableModelsResult {
  * CLI 자동 감지, ACP 프로토콜 추상화, 이벤트 기반 스트리밍을 제공합니다.
  */
 export interface IUnifiedAgentClient {
+  /**
+   * 이벤트 리스너를 등록합니다.
+   *
+   * @param event - 이벤트 이름
+   * @param listener - 이벤트 리스너
+   */
+  on<K extends keyof UnifiedClientEvents>(
+    event: K,
+    listener: (...args: UnifiedClientEvents[K]) => void,
+  ): this;
+
+  /**
+   * 한 번만 실행되는 이벤트 리스너를 등록합니다.
+   *
+   * @param event - 이벤트 이름
+   * @param listener - 이벤트 리스너
+   */
+  once<K extends keyof UnifiedClientEvents>(
+    event: K,
+    listener: (...args: UnifiedClientEvents[K]) => void,
+  ): this;
+
+  /**
+   * 이벤트 리스너를 해제합니다.
+   *
+   * @param event - 이벤트 이름
+   * @param listener - 이벤트 리스너
+   */
+  off<K extends keyof UnifiedClientEvents>(
+    event: K,
+    listener: (...args: UnifiedClientEvents[K]) => void,
+  ): this;
+
   // ─── 연결 관리 ──────────────────────────────────────
 
   /**
@@ -137,9 +176,15 @@ export interface IUnifiedAgentClient {
   /**
    * 메시지를 전송합니다.
    *
-   * @param content - 메시지 내용
+   * @param content - 메시지 내용 (텍스트 또는 ACP ContentBlock 배열)
+   * @returns 프롬프트 처리 결과
    */
-  sendMessage(content: string): Promise<void>;
+  sendMessage(content: string | AcpContentBlock[]): Promise<PromptResponse>;
+
+  /**
+   * 현재 진행 중인 프롬프트를 취소합니다.
+   */
+  cancelPrompt(): Promise<void>;
 
   // ─── 설정 변경 ──────────────────────────────────────
 
@@ -149,6 +194,14 @@ export interface IUnifiedAgentClient {
    * @param model - 모델 이름
    */
   setModel(model: string): Promise<void>;
+
+  /**
+   * 세션 설정 옵션을 변경합니다.
+   *
+   * @param configId - 설정 옵션 ID
+   * @param value - 설정 값
+   */
+  setConfigOption(configId: string, value: string): Promise<void>;
 
   /**
    * 에이전트 모드를 설정합니다.
@@ -182,4 +235,11 @@ export interface IUnifiedAgentClient {
    * @returns 모델 목록 및 현재 모델 (models 미지원 CLI인 경우 null)
    */
   getAvailableModels(): AvailableModelsResult | null;
+
+  /**
+   * 기존 세션을 로드합니다.
+   *
+   * @param sessionId - 로드할 세션 ID
+   */
+  loadSession(sessionId: string): Promise<void>;
 }
