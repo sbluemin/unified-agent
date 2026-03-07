@@ -12,7 +12,7 @@ Unified Agent는 4개의 주요 CLI 에이전트(Gemini, Claude, Codex, OpenCode
 |-----|----------|------------|
 | **Gemini** | ACP | `gemini --experimental-acp` |
 | **Claude** | ACP | `npx @zed-industries/claude-agent-acp@0.18.0` |
-| **Codex** | ACP + MCP | `npx @zed-industries/codex-acp@0.9.4` / `codex mcp-server` |
+| **Codex** | ACP | `npx @zed-industries/codex-acp@0.9.4` |
 | **OpenCode** | ACP | `opencode acp` |
 
 ## 설치
@@ -62,18 +62,25 @@ const result = await client.connect({
   autoApprove: true,           // 자동 권한 승인
   yoloMode: false,             // YOLO 모드 (Claude 전용)
   model: 'gemini-pro',         // 모델 지정
-  codexProtocol: 'acp',        // Codex 프로토콜 ('acp' | 'mcp')
   clientInfo: { name: 'MyApp', version: '1.0.0' },
 });
 ```
 
-#### `sendMessage(content: string): Promise<void>`
+#### `sendMessage(content: string | AcpContentBlock[]): Promise<PromptResponse>`
 
 메시지를 전송합니다.
 
-#### `callTool(name: string, args?: object): Promise<McpToolCallResult>`
+#### `cancelPrompt(): Promise<void>`
 
-도구를 호출합니다 (MCP 모드 전용).
+현재 진행 중인 프롬프트를 취소합니다.
+
+#### `setConfigOption(configId: string, value: string): Promise<void>`
+
+세션 설정 옵션을 변경합니다.
+
+#### `loadSession(sessionId: string): Promise<void>`
+
+기존 세션을 다시 로드합니다.
 
 #### `detectClis(): Promise<CliDetectionResult[]>`
 
@@ -87,11 +94,13 @@ const result = await client.connect({
 
 | 이벤트 | 파라미터 | 설명 |
 |--------|----------|------|
+| `userMessageChunk` | `(text, sessionId)` | 사용자 메시지 재생 스트리밍 |
 | `messageChunk` | `(text, sessionId)` | AI 응답 텍스트 스트리밍 |
 | `thoughtChunk` | `(text, sessionId)` | AI 사고 과정 |
 | `toolCall` | `(title, status, sessionId)` | 도구 호출 |
 | `plan` | `(plan, sessionId)` | 계획 업데이트 |
-| `permissionRequest` | `(params, requestId)` | 권한 요청 |
+| `permissionRequest` | `(params, resolve)` | 권한 요청 |
+| `promptComplete` | `(sessionId)` | 프롬프트 완료 |
 | `stateChange` | `(state)` | 연결 상태 변경 |
 | `error` | `(error)` | 에러 |
 
@@ -100,7 +109,6 @@ const result = await client.connect({
 | 모듈 | 설명 |
 |------|------|
 | `AcpConnection` | ACP 프로토콜 직접 사용 |
-| `McpConnection` | Codex MCP 직접 사용 |
 | `CliDetector` | CLI 자동 감지 |
 | `cleanEnvironment` | 환경변수 정제 |
 | `killProcess` | 프로세스 안전 종료 |
@@ -111,8 +119,6 @@ const result = await client.connect({
 UnifiedAgentClient
   ├── AcpConnection (Gemini, Claude, Codex-bridge, OpenCode)
   │     └── BaseConnection (spawn + JSON-RPC 2.0 over stdio)
-  └── McpConnection (Codex MCP direct)
-        └── BaseConnection
 ```
 
 ## 라이선스
