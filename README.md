@@ -1,46 +1,46 @@
 # @sbluemin/unified-agent
 
-> Codex CLI, Claude Code, Gemini CLI를 통합하는 TypeScript SDK
+> A TypeScript SDK that unifies Codex CLI, Claude Code, and Gemini CLI under a single interface.
 
-## 개요
+## Overview
 
-Unified Agent는 3개의 주요 CLI 에이전트(Gemini, Claude, Codex)를 **하나의 통합된 인터페이스**로 제어하는 TypeScript SDK입니다.
+Unified Agent provides a single, consistent TypeScript API to control three major CLI agents — Gemini, Claude, and Codex — all communicating over the ACP (Agent Communication Protocol).
 
-### 지원 프로토콜
+### Supported CLIs
 
-| CLI | 프로토콜 | Spawn 방식 |
-|-----|----------|------------|
+| CLI | Protocol | Spawn Command |
+|-----|----------|---------------|
 | **Gemini** | ACP | `gemini --experimental-acp` |
 | **Claude** | ACP | `npx @zed-industries/claude-agent-acp@0.18.0` |
 | **Codex** | ACP | `npx @zed-industries/codex-acp@0.9.4` |
 
-## 설치
+## Installation
 
 ```bash
 npm install @sbluemin/unified-agent
 ```
 
-## 빠른 시작
+## Quick Start
 
 ```typescript
 import { UnifiedAgentClient } from '@sbluemin/unified-agent';
 
 const client = new UnifiedAgentClient();
 
-// 이벤트 리스너 설정
+// Set up event listeners
 client.on('messageChunk', (text) => process.stdout.write(text));
-client.on('toolCall', (title, status) => console.log(`🔧 ${title} (${status})`));
+client.on('toolCall', (title, status) => console.log(`Tool: ${title} (${status})`));
 
-// 연결 (CLI 자동 감지)
+// Connect (auto-detects available CLI)
 await client.connect({
   cwd: '/my/workspace',
   autoApprove: true,
 });
 
-// 메시지 전송
-await client.sendMessage('이 프로젝트를 분석해줘');
+// Send a message
+await client.sendMessage('Analyze this project');
 
-// 연결 종료
+// Disconnect
 await client.disconnect();
 ```
 
@@ -48,78 +48,78 @@ await client.disconnect();
 
 ### `UnifiedAgentClient`
 
-통합 클라이언트 클래스.
+The main client class.
 
 #### `connect(options: UnifiedClientOptions): Promise<ConnectResult>`
 
-CLI에 연결합니다.
+Connects to a CLI agent.
 
 ```typescript
 const result = await client.connect({
-  cwd: '/my/workspace',       // 작업 디렉토리 (필수)
-  cli: 'gemini',               // CLI 선택 (미지정 시 자동 감지)
-  autoApprove: true,           // 자동 권한 승인
-  yoloMode: false,             // YOLO 모드 (Claude 전용)
-  model: 'gemini-pro',         // 모델 지정
+  cwd: '/my/workspace',       // Working directory (required)
+  cli: 'gemini',               // CLI selection (auto-detected if omitted)
+  autoApprove: true,           // Auto-approve permissions
+  yoloMode: false,             // YOLO mode (Claude only)
+  model: 'gemini-pro',         // Model override
   clientInfo: { name: 'MyApp', version: '1.0.0' },
 });
 ```
 
 #### `sendMessage(content: string | AcpContentBlock[]): Promise<PromptResponse>`
 
-메시지를 전송합니다.
+Sends a message to the agent.
 
 #### `cancelPrompt(): Promise<void>`
 
-현재 진행 중인 프롬프트를 취소합니다.
+Cancels the currently running prompt.
 
 #### `setConfigOption(configId: string, value: string): Promise<void>`
 
-세션 설정 옵션을 변경합니다.
+Updates a session configuration option.
 
 #### `loadSession(sessionId: string): Promise<void>`
 
-기존 세션을 다시 로드합니다.
+Reloads an existing session.
 
 #### `detectClis(): Promise<CliDetectionResult[]>`
 
-사용 가능한 CLI를 감지합니다.
+Detects available CLIs on the system.
 
 #### `disconnect(): Promise<void>`
 
-연결을 종료합니다.
+Closes the connection and terminates the child process.
 
-### 이벤트
+### Events
 
-| 이벤트 | 파라미터 | 설명 |
-|--------|----------|------|
-| `userMessageChunk` | `(text, sessionId)` | 사용자 메시지 재생 스트리밍 |
-| `messageChunk` | `(text, sessionId)` | AI 응답 텍스트 스트리밍 |
-| `thoughtChunk` | `(text, sessionId)` | AI 사고 과정 |
-| `toolCall` | `(title, status, sessionId)` | 도구 호출 |
-| `plan` | `(plan, sessionId)` | 계획 업데이트 |
-| `permissionRequest` | `(params, resolve)` | 권한 요청 |
-| `promptComplete` | `(sessionId)` | 프롬프트 완료 |
-| `stateChange` | `(state)` | 연결 상태 변경 |
-| `error` | `(error)` | 에러 |
+| Event | Parameters | Description |
+|-------|------------|-------------|
+| `userMessageChunk` | `(text, sessionId)` | User message replay streaming |
+| `messageChunk` | `(text, sessionId)` | AI response text streaming |
+| `thoughtChunk` | `(text, sessionId)` | AI thinking process |
+| `toolCall` | `(title, status, sessionId)` | Tool invocation |
+| `plan` | `(plan, sessionId)` | Plan update |
+| `permissionRequest` | `(params, resolve)` | Permission request callback |
+| `promptComplete` | `(sessionId)` | Prompt completion |
+| `stateChange` | `(state)` | Connection state change |
+| `error` | `(error)` | Error |
 
-### 하위 모듈
+### Submodules
 
-| 모듈 | 설명 |
-|------|------|
-| `AcpConnection` | ACP 프로토콜 직접 사용 |
-| `CliDetector` | CLI 자동 감지 |
-| `cleanEnvironment` | 환경변수 정제 |
-| `killProcess` | 프로세스 안전 종료 |
+| Module | Description |
+|--------|-------------|
+| `AcpConnection` | Direct ACP protocol access |
+| `CliDetector` | CLI auto-detection |
+| `cleanEnvironment` | Environment variable sanitization |
+| `killProcess` | Safe process termination |
 
-## 아키텍처
+## Architecture
 
 ```
 UnifiedAgentClient
-  ├── AcpConnection (Gemini, Claude, Codex-bridge)
-  │     └── BaseConnection (spawn + JSON-RPC 2.0 over stdio)
+  +-- AcpConnection (Gemini, Claude, Codex)
+        +-- BaseConnection (spawn + JSON-RPC 2.0 over stdio)
 ```
 
-## 라이선스
+## License
 
 MIT
