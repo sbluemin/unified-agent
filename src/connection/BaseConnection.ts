@@ -51,7 +51,7 @@ export class BaseConnection extends EventEmitter {
     this.args = options.args;
     this.cwd = options.cwd;
     this.env = options.env ?? { ...process.env };
-    this.requestTimeout = options.requestTimeout ?? 300_000; // 5분
+    this.requestTimeout = options.requestTimeout ?? 600_000; // 10분
     this.initTimeout = options.initTimeout ?? 60_000; // 60초
   }
 

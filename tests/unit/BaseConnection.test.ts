@@ -158,7 +158,7 @@ describe('BaseConnection', () => {
         args: [],
         cwd: '/tmp',
       });
-      expect((conn as any).requestTimeout).toBe(300_000);
+      expect((conn as any).requestTimeout).toBe(600_000);
       expect((conn as any).initTimeout).toBe(60_000);
     });
 

@@ -10,6 +10,8 @@ delete process.env.CLAUDECODE;
 delete process.env.CLAUDE_CODE_ENTRYPOINT;
 
 import { parseArgs } from 'node:util';
+import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
 import { UnifiedAgentClient } from './client/UnifiedAgentClient.js';
 import type { CliType } from './types/config.js';
 import { getModelsRegistry, getProviderModels } from './models/ModelRegistry.js';
@@ -197,10 +199,189 @@ if (!prompt) {
   process.exit(1);
 }
 
+// ─── Codex 직접 실행 (ACP 우회) ─────────────────────────
+
+/** Codex 직접 실행 옵션 */
+interface CodexDirectOptions {
+  prompt: string;
+  model?: string;
+  effort?: string;
+  cwd: string;
+  yolo: boolean;
+  jsonMode: boolean;
+  sessionId?: string;
+}
+
+/** Codex exec JSONL 이벤트 아이템 */
+interface CodexItem {
+  id: string;
+  type: string;
+  text?: string;
+  command?: string;
+  aggregated_output?: string;
+  exit_code?: number | null;
+  status?: string;
+}
+
+/** Codex exec JSONL 이벤트 */
+interface CodexEvent {
+  type: string;
+  thread_id?: string;
+  item?: CodexItem;
+  usage?: { input_tokens: number; output_tokens: number };
+}
+
+/**
+ * codex exec 인자를 빌드합니다.
+ * 세션 재개 시: codex exec resume <sessionId> --json [opts] <prompt>
+ * 신규 실행 시: codex exec --json [opts] <prompt>
+ */
+function buildCodexExecArgs(options: CodexDirectOptions): string[] {
+  const args: string[] = ['exec'];
+
+  if (options.sessionId) {
+    args.push('resume', options.sessionId);
+  }
+
+  args.push('--json');
+
+  // /fast 모드 기본 적용
+  args.push('-c', 'service_tier="fast"');
+
+  if (options.model) args.push('-m', options.model);
+  if (options.effort) args.push('-c', `model_reasoning_effort="${options.effort}"`);
+  if (!options.sessionId && options.cwd) args.push('-C', options.cwd);
+  if (options.yolo) args.push('--dangerously-bypass-approvals-and-sandbox');
+
+  args.push(options.prompt);
+  return args;
+}
+
+/**
+ * Codex CLI를 직접 실행합니다 (ACP 프로토콜 우회).
+ * 내부적으로 `codex exec --json`을 spawn하여 JSONL을 파싱합니다.
+ */
+async function runCodexDirect(options: CodexDirectOptions): Promise<void> {
+  const args = buildCodexExecArgs(options);
+
+  if (!options.jsonMode) {
+    const resumeLabel = options.sessionId ? `, resume: ${options.sessionId.slice(0, 8)}…` : '';
+    process.stderr.write(`${ce.bold(ce.cyan('●'))} ${ce.bold('unified-agent')} ${ce.dim(`(codex direct${resumeLabel})`)}\n\n`);
+  }
+
+  const startTime = Date.now();
+  let threadId: string | null = null;
+  let fullResponse = '';
+
+  const child = spawn('codex', args, {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: process.env,
+  });
+
+  // stderr를 그대로 전달 (codex의 경고/에러 메시지)
+  if (child.stderr) {
+    child.stderr.on('data', (chunk: Buffer) => {
+      if (!options.jsonMode) {
+        process.stderr.write(chunk);
+      }
+    });
+  }
+
+  // JSONL stdout 파싱
+  const rl = createInterface({ input: child.stdout });
+
+  rl.on('line', (line: string) => {
+    let event: CodexEvent;
+    try {
+      event = JSON.parse(line) as CodexEvent;
+    } catch {
+      // 파싱 불가 라인은 stderr로 출력
+      if (!options.jsonMode) {
+        process.stderr.write(ce.dim(line) + '\n');
+      }
+      return;
+    }
+
+    switch (event.type) {
+      case 'thread.started':
+        threadId = event.thread_id ?? null;
+        break;
+
+      case 'item.started':
+        if (event.item?.type === 'command_execution' && !options.jsonMode) {
+          process.stderr.write(ce.dim(`  ▶ ${event.item.command ?? '(command)'}\n`));
+        }
+        break;
+
+      case 'item.completed':
+        if (event.item?.type === 'agent_message' && event.item.text) {
+          fullResponse += event.item.text;
+          if (!options.jsonMode) {
+            process.stdout.write(event.item.text);
+          }
+        }
+        break;
+
+      case 'turn.completed':
+        // 턴 완료 — 필요 시 usage 로깅 가능
+        break;
+    }
+  });
+
+  // 프로세스 종료 대기
+  const exitCode = await new Promise<number>((resolve) => {
+    child.on('close', (code) => resolve(code ?? 1));
+    child.on('error', (err) => {
+      if (!options.jsonMode) {
+        process.stderr.write(`\n${ce.red('오류')}: codex 실행 실패 — ${err.message}\n`);
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          process.stderr.write(`${ce.dim('codex CLI가 설치되어 있는지 확인해주세요.')}\n`);
+        }
+      } else {
+        process.stdout.write(JSON.stringify({ error: err.message, sessionId: null }) + '\n');
+      }
+      resolve(1);
+    });
+  });
+
+  // 출력 마무리
+  if (!options.jsonMode) {
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    const sessionInfo = threadId ? ` ${ce.dim('|')} ${ce.dim(`세션: ${threadId}`)}` : '';
+    process.stderr.write(`\n\n${ce.bold(ce.green('●'))} ${ce.dim(`완료 (${elapsed}s)`)}${sessionInfo}\n`);
+  }
+
+  if (options.jsonMode) {
+    process.stdout.write(
+      JSON.stringify({ response: fullResponse, cli: 'codex', sessionId: threadId }) + '\n',
+    );
+  }
+
+  process.exit(exitCode);
+}
+
 // ─── 실행 ──────────────────────────────────────────────
 
 const jsonMode = values.json as boolean;
 const startTime = Date.now();
+
+const selectedCli = cliOpt as CliType | undefined;
+
+// Codex 직접 실행 모드 (ACP 우회)
+if (selectedCli === 'codex') {
+  await runCodexDirect({
+    prompt,
+    model: values.model as string | undefined,
+    effort: effortOpt,
+    cwd: (values.cwd as string) || process.cwd(),
+    yolo: values.yolo as boolean,
+    jsonMode,
+    sessionId: sessionOpt,
+  });
+  // runCodexDirect 내부에서 process.exit 처리
+}
+
+// ─── ACP 프로토콜 실행 (gemini, claude, 자동 감지) ────────
 
 const client = new UnifiedAgentClient();
 let fullResponse = '';
@@ -235,7 +416,6 @@ if (!jsonMode) {
 
 try {
   const cwd = (values.cwd as string) || process.cwd();
-  const selectedCli = cliOpt as CliType | undefined;
 
   if (!jsonMode) {
     const cliLabel = selectedCli ?? '자동 감지';
