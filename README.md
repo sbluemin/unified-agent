@@ -4,7 +4,10 @@
 
 ## Overview
 
-Unified Agent provides a single, consistent TypeScript API to control three major CLI agents — Gemini, Claude, and Codex — all communicating over the ACP (Agent Communication Protocol).
+Unified Agent provides two ways to control three major CLI agents — Gemini, Claude, and Codex — all communicating over the ACP (Agent Client Protocol):
+
+- **CLI Binary** — One-shot prompt execution from the command line
+- **TypeScript SDK** — Full programmatic control with event-based streaming
 
 ### Supported CLIs
 
@@ -14,13 +17,123 @@ Unified Agent provides a single, consistent TypeScript API to control three majo
 | **Claude** | ACP | `npx @zed-industries/claude-agent-acp@0.18.0` |
 | **Codex** | ACP | `npx @zed-industries/codex-acp@0.9.4` |
 
-## Installation
+### Prerequisites
+
+- Node.js >= 18.0.0
+- At least one of the above CLIs installed and authenticated
+
+---
+
+## CLI Usage
+
+### Installation
+
+Clone the repository and link globally:
 
 ```bash
-npm install @sbluemin/unified-agent
+git clone https://github.com/sbluemin/unified-agent.git
+cd unified-agent
+npm install
+npm run build
+npm link
 ```
 
-## Quick Start
+After linking, the `unified-agent` command is available globally:
+
+```bash
+unified-agent --help
+```
+
+To unlink:
+
+```bash
+npm unlink -g @sbluemin/unified-agent
+```
+
+### Basic Usage
+
+```bash
+# Auto-detect available CLI and run
+unified-agent "Analyze this project"
+
+# Select a specific CLI
+unified-agent -c claude "Review this code"
+
+# Select a model
+unified-agent -c claude -m opus "Find bugs"
+
+# Set reasoning effort (Codex)
+unified-agent -c codex -e high "Refactor this module"
+
+# Pipe from stdin
+cat error.log | unified-agent -c gemini "Explain this error"
+
+# JSON output (for scripting / AI agents)
+unified-agent --json -c claude "Summarize" | jq .response
+```
+
+### Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--cli <name>` | `-c` | CLI selection (`gemini` \| `claude` \| `codex`) |
+| `--model <name>` | `-m` | Model override |
+| `--effort <level>` | `-e` | Reasoning effort (`low` \| `medium` \| `high` \| `xhigh`) |
+| `--cwd <path>` | `-d` | Working directory (default: current directory) |
+| `--yolo` | | Auto-approve all permissions |
+| `--json` | | JSON output mode |
+| `--help` | `-h` | Show help |
+
+### Output Modes
+
+**Pretty mode** (default) — streams the AI response to stdout with status on stderr:
+
+```
+● unified-agent (claude)
+
+The project is a TypeScript SDK that...
+
+  ▶ Read file: src/index.ts
+  ▶ Read file: package.json
+
+● Done (12.3s)
+```
+
+**JSON mode** (`--json`) — outputs a single JSON object to stdout:
+
+```json
+{"response":"The project is a TypeScript SDK that...","cli":"claude"}
+```
+
+On error:
+
+```json
+{"error":"No available CLI found"}
+```
+
+---
+
+## SDK Usage
+
+### Installation
+
+Add as a dependency via git URL:
+
+```bash
+npm install github:sbluemin/unified-agent
+```
+
+In `package.json`:
+
+```json
+{
+  "dependencies": {
+    "@sbluemin/unified-agent": "github:sbluemin/unified-agent"
+  }
+}
+```
+
+### Quick Start
 
 ```typescript
 import { UnifiedAgentClient } from '@sbluemin/unified-agent';
@@ -44,11 +157,7 @@ await client.sendMessage('Analyze this project');
 await client.disconnect();
 ```
 
-## API
-
-### `UnifiedAgentClient`
-
-The main client class.
+### API
 
 #### `connect(options: UnifiedClientOptions): Promise<ConnectResult>`
 
@@ -59,7 +168,7 @@ const result = await client.connect({
   cwd: '/my/workspace',       // Working directory (required)
   cli: 'gemini',               // CLI selection (auto-detected if omitted)
   autoApprove: true,           // Auto-approve permissions
-  yoloMode: false,             // YOLO mode (Claude only)
+  yoloMode: false,             // Bypass permissions mode
   model: 'gemini-pro',         // Model override
   clientInfo: { name: 'MyApp', version: '1.0.0' },
 });
@@ -73,9 +182,17 @@ Sends a message to the agent.
 
 Cancels the currently running prompt.
 
+#### `setModel(model: string): Promise<void>`
+
+Changes the model.
+
 #### `setConfigOption(configId: string, value: string): Promise<void>`
 
-Updates a session configuration option.
+Updates a session configuration option (e.g. `reasoning_effort`).
+
+#### `setMode(mode: string): Promise<void>`
+
+Sets the agent mode (e.g. `plan`, `bypassPermissions`).
 
 #### `loadSession(sessionId: string): Promise<void>`
 
@@ -85,6 +202,10 @@ Reloads an existing session.
 
 Detects available CLIs on the system.
 
+#### `getAvailableModels(): AvailableModelsResult | null`
+
+Returns the list of available models for the connected CLI.
+
 #### `disconnect(): Promise<void>`
 
 Closes the connection and terminates the child process.
@@ -93,11 +214,11 @@ Closes the connection and terminates the child process.
 
 | Event | Parameters | Description |
 |-------|------------|-------------|
-| `userMessageChunk` | `(text, sessionId)` | User message replay streaming |
 | `messageChunk` | `(text, sessionId)` | AI response text streaming |
 | `thoughtChunk` | `(text, sessionId)` | AI thinking process |
 | `toolCall` | `(title, status, sessionId)` | Tool invocation |
 | `plan` | `(plan, sessionId)` | Plan update |
+| `userMessageChunk` | `(text, sessionId)` | User message replay streaming |
 | `permissionRequest` | `(params, resolve)` | Permission request callback |
 | `promptComplete` | `(sessionId)` | Prompt completion |
 | `stateChange` | `(state)` | Connection state change |
@@ -111,6 +232,8 @@ Closes the connection and terminates the child process.
 | `CliDetector` | CLI auto-detection |
 | `cleanEnvironment` | Environment variable sanitization |
 | `killProcess` | Safe process termination |
+
+---
 
 ## Architecture
 
