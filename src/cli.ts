@@ -4,6 +4,11 @@
  * (shebang은 tsup banner로 자동 추가)
  */
 
+// Claude Code 내부에서 실행될 때 환경변수 충돌 방지
+// (cli.ts 프로세스 자체가 Claude Code 세션 안에서 spawn되므로 즉시 제거)
+delete process.env.CLAUDECODE;
+delete process.env.CLAUDE_CODE_ENTRYPOINT;
+
 import { parseArgs } from 'node:util';
 import { UnifiedAgentClient } from './client/UnifiedAgentClient.js';
 import type { CliType } from './types/config.js';
@@ -61,7 +66,7 @@ ${c.bold('사용법')}
 
 ${c.bold('옵션')}
   -c, --cli <name>      CLI 선택 (gemini | claude | codex)
-  -s, --session <id>    이전 세션 재개
+  -s, --session <id>    이전 세션 재개 (사용 시 -c 필수)
   -m, --model <name>    모델 지정
   -e, --effort <level>  reasoning effort (none | low | medium | high | xhigh)
   -d, --cwd <path>      작업 디렉토리 (기본: 현재 디렉토리)
@@ -84,7 +89,7 @@ ${c.bold('예시')}
   cat error.log | unified-agent -c gemini "이 에러를 분석해줘"
 
   ${c.dim('# 이전 세션 재개')}
-  unified-agent -s <sessionId> "이어서 설명해줘"
+  unified-agent -c claude -s <sessionId> "이어서 설명해줘"
 
   ${c.dim('# JSON 출력 (스크립트에서 파싱 용도)')}
   unified-agent --json -c claude "요약해줘" | jq .response
@@ -158,6 +163,11 @@ const rawSessionOpt = values.session as string | undefined;
 const sessionOpt = rawSessionOpt?.trim();
 if (rawSessionOpt !== undefined && !sessionOpt) {
   process.stderr.write(`${ce.red('오류')}: --session 값은 비어 있을 수 없습니다.\n`);
+  process.exit(1);
+}
+
+if (sessionOpt && !cliOpt) {
+  process.stderr.write(`${ce.red('오류')}: --session 사용 시 --cli를 함께 지정해야 합니다.\n`);
   process.exit(1);
 }
 

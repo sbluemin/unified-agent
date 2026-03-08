@@ -9,6 +9,7 @@ const REMOVE_KEYS = [
   'NODE_INSPECT',
   'NODE_DEBUG',
   'CLAUDECODE', // Claude 중첩 세션 감지 방지
+  'CLAUDE_CODE_ENTRYPOINT', // Claude Code 내부에서 실행 시 충돌 방지
 ] as const;
 
 /** npm lifecycle 변수 접두사 */

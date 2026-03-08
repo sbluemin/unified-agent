@@ -95,21 +95,24 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
     // 기존 연결 정리
     await this.disconnect();
 
-    // CLI 선택 (명시적 또는 자동 감지)
-    let selectedCli: CliType;
-    if (options.cli) {
-      selectedCli = options.cli;
-    } else {
-      const preferred = await this.detector.getPreferred();
-      if (!preferred) {
-        throw new Error(
-          '사용 가능한 CLI가 없습니다. gemini, claude, codex 중 하나를 설치해주세요.',
-        );
-      }
-      selectedCli = preferred.cli;
+    // 세션 재개 시 CLI 미지정 방지 (자동 감지로 엉뚱한 CLI에 재개 시도하는 문제 차단)
+    if (options.sessionId && !options.cli) {
+      throw new Error('세션 재개 시 cli 지정이 필요합니다.');
     }
 
-    return this.connectAcp(selectedCli, options);
+    // CLI 선택: 명시적 지정 → 자동 감지 순서
+    if (options.cli) {
+      return this.connectAcp(options.cli, options);
+    }
+
+    const preferred = await this.detector.getPreferred();
+    if (!preferred) {
+      throw new Error(
+        '사용 가능한 CLI가 없습니다. gemini, claude, codex 중 하나를 설치해주세요.',
+      );
+    }
+
+    return this.connectAcp(preferred.cli, options);
   }
 
   /**
@@ -420,6 +423,18 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
 
     if (error instanceof Error) {
       return error;
+    }
+
+    // ACP SDK의 JSON-RPC ErrorResponse는 plain object { code, message, data? }로 reject됨
+    if (typeof error === 'object' && error !== null) {
+      const obj = error as Record<string, unknown>;
+      if (typeof obj.message === 'string') {
+        const code = typeof obj.code === 'number' ? ` (code: ${obj.code})` : '';
+        const data = obj.data ? ` — ${JSON.stringify(obj.data)}` : '';
+        return new Error(`${obj.message}${code}${data}`);
+      }
+      // message 필드가 없는 plain object도 JSON으로 직렬화
+      return new Error(JSON.stringify(error));
     }
 
     return new Error(String(error));

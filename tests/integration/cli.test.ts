@@ -138,6 +138,13 @@ describe('CLI 바이너리: 인자 파싱', () => {
     console.log('  ✅ 빈 --session 검증 확인');
   });
 
+  it('--session 사용 시 --cli가 없으면 에러를 반환해야 합니다', () => {
+    const { stderr, exitCode } = runCli(['-s', 'resume-123', '안녕']);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain('--session 사용 시 --cli를 함께 지정해야 합니다');
+    console.log('  ✅ --session + --cli 필수 검증 확인');
+  });
+
   it('알 수 없는 옵션이면 에러를 반환해야 합니다', () => {
     const { stderr, exitCode } = runCli(['--unknown-flag', '안녕']);
     expect(exitCode).toBe(1);
@@ -222,6 +229,40 @@ expect(stdout).not.toContain('●');
 createCliE2eTest('gemini', 'gemini');
 createCliE2eTest('claude', 'claude');
 createCliE2eTest('codex', 'codex');
+
+describe.skipIf(!isCliInstalled('claude'))('CLI 바이너리 E2E: Claude 세션 재개', () => {
+  it('명시적 CLI 지정으로 Claude 세션을 재개해야 합니다', async () => {
+    const first = await runCliAsync(
+      ['--json', '-c', 'claude', '-m', 'haiku', '1+1의 결과를 숫자만 답해줘. 다른 설명은 하지 마.'],
+      { timeout: 180_000 },
+    );
+    expect(first.exitCode).toBe(0);
+
+    const firstResult = JSON.parse(first.stdout.trim()) as {
+      response: string;
+      cli: string;
+      sessionId: string;
+    };
+    expect(firstResult.cli).toBe('claude');
+    expect(firstResult.response).toContain('2');
+    expect(firstResult.sessionId.length).toBeGreaterThan(0);
+
+    const resumed = await runCliAsync(
+      ['--json', '-c', 'claude', '-s', firstResult.sessionId, '방금 답을 그대로 한 번만 다시 말해줘.'],
+      { timeout: 180_000 },
+    );
+    expect(resumed.exitCode).toBe(0);
+
+    const resumedResult = JSON.parse(resumed.stdout.trim()) as {
+      response: string;
+      cli: string;
+      sessionId: string;
+    };
+    expect(resumedResult.cli).toBe('claude');
+    expect(resumedResult.sessionId).toBe(firstResult.sessionId);
+    expect(resumedResult.response).toContain('2');
+  }, 180_000);
+});
 
 // ═══════════════════════════════════════════════
 // 3. Codex reasoning effort E2E

@@ -134,6 +134,17 @@ describe('UnifiedAgentClient 인스턴스', () => {
     await client.disconnect();
   });
 
+  it('sessionId만으로 재개를 시도하면 에러가 발생해야 합니다', async () => {
+    const client = new UnifiedAgentClient();
+
+    await expect(
+      client.connect({
+        cwd: process.cwd(),
+        sessionId: 'resume-123',
+      }),
+    ).rejects.toThrow('세션 재개 시 cli 지정이 필요합니다.');
+  });
+
   it('sessionId 없이 connect하면 AcpConnection.connect()에 undefined가 전달되어야 합니다', async () => {
     const connectSpy = vi
       .spyOn(AcpConnection.prototype, 'connect')

@@ -36,7 +36,7 @@ export const CLI_BACKENDS: Record<CliType, CliBackendConfig> = {
     cliCommand: 'claude',
     protocol: 'acp',
     authRequired: true,
-    npxPackage: '@zed-industries/claude-agent-acp@0.18.0',
+    npxPackage: '@zed-industries/claude-agent-acp@0.20.2',
     modes: [
       { id: 'default', label: 'Default' },
       { id: 'plan', label: 'Plan' },
@@ -49,7 +49,7 @@ export const CLI_BACKENDS: Record<CliType, CliBackendConfig> = {
     cliCommand: 'codex',
     protocol: 'acp',
     authRequired: true,
-    npxPackage: '@zed-industries/codex-acp@0.9.4',
+    npxPackage: '@zed-industries/codex-acp@0.9.5',
     modes: [
       { id: 'default', label: 'Plan' },
       { id: 'autoEdit', label: 'Auto Edit' },

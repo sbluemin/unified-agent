@@ -68,6 +68,9 @@ unified-agent -c codex -e high "Refactor this module"
 # Pipe from stdin
 cat error.log | unified-agent -c gemini "Explain this error"
 
+# Resume a previous session
+unified-agent -c claude -s <sessionId> "Continue this conversation"
+
 # JSON output (for scripting / AI agents)
 unified-agent --json -c claude "Summarize" | jq .response
 ```
@@ -77,6 +80,7 @@ unified-agent --json -c claude "Summarize" | jq .response
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--cli <name>` | `-c` | CLI selection (`gemini` \| `claude` \| `codex`) |
+| `--session <id>` | `-s` | Resume a previous session (requires `--cli`) |
 | `--model <name>` | `-m` | Model override |
 | `--effort <level>` | `-e` | Reasoning effort (`low` \| `medium` \| `high` \| `xhigh`) |
 | `--cwd <path>` | `-d` | Working directory (default: current directory) |
