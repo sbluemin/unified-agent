@@ -150,7 +150,7 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
     let session: AcpSessionNewResult;
     try {
       // 연결 실행
-      session = await this.acpConnection.connect(options.cwd);
+      session = await this.acpConnection.connect(options.cwd, options.sessionId);
     } catch (error) {
       const connectionError = this.buildConnectionError(cli, error, recentLogs);
       await this.cleanupFailedAcpConnection();

@@ -107,8 +107,9 @@ async function setupConnectedConnection(
   connection: TestableAcpConnection,
   mock: ReturnType<typeof createMockChild>,
   sessionId = 'session-1',
+  resumeSessionId?: string,
 ): Promise<void> {
-  const connectPromise = connection.connect('/test/workspace');
+  const connectPromise = connection.connect('/test/workspace', resumeSessionId);
   await wait();
 
   const initReq = parseMessage(mock.stdin.written[0]);
@@ -123,13 +124,25 @@ async function setupConnectedConnection(
   await wait();
 
   const sessionReq = parseMessage(mock.stdin.written[1]);
-  mock.stdout.push(
-    `${JSON.stringify({
-      jsonrpc: '2.0',
-      id: sessionReq.id,
-      result: { sessionId },
-    })}\n`,
-  );
+  if (resumeSessionId) {
+    // session/load 응답
+    mock.stdout.push(
+      `${JSON.stringify({
+        jsonrpc: '2.0',
+        id: sessionReq.id,
+        result: {},
+      })}\n`,
+    );
+  } else {
+    // session/new 응답
+    mock.stdout.push(
+      `${JSON.stringify({
+        jsonrpc: '2.0',
+        id: sessionReq.id,
+        result: { sessionId },
+      })}\n`,
+    );
+  }
 
   await connectPromise;
 }
@@ -251,6 +264,92 @@ describe('AcpConnection', () => {
     it('spawn 실패 시 connect가 reject 되어야 합니다', async () => {
       const broken = new BrokenAcpConnection(defaultOptions);
       await expect(broken.connect('/test/workspace')).rejects.toThrow('spawn 실패');
+    });
+
+    it('sessionId가 전달되면 session/new 대신 session/load를 호출해야 합니다', async () => {
+      const connectPromise = connection.connect('/test/workspace', 'resume-session-1');
+      await wait();
+
+      const initReq = parseMessage(mock.stdin.written[0]);
+      expect(initReq.method).toBe('initialize');
+      mock.stdout.push(
+        `${JSON.stringify({
+          jsonrpc: '2.0',
+          id: initReq.id,
+          result: { protocolVersion: 1, agentCapabilities: {} },
+        })}\n`,
+      );
+
+      await wait();
+
+      const sessionReq = parseMessage(mock.stdin.written[1]);
+      expect(sessionReq.method).toBe('session/load');
+      expect((sessionReq.params as Record<string, unknown>).sessionId).toBe('resume-session-1');
+      expect((sessionReq.params as Record<string, unknown>).cwd).toBe('/test/workspace');
+      expect((sessionReq.params as Record<string, unknown>).mcpServers).toEqual([]);
+
+      mock.stdout.push(
+        `${JSON.stringify({
+          jsonrpc: '2.0',
+          id: sessionReq.id,
+          result: {},
+        })}\n`,
+      );
+
+      const session = await connectPromise;
+      expect(session.sessionId).toBe('resume-session-1');
+      expect(connection.connectionState).toBe('ready');
+    });
+
+    it('sessionId 없이 connect하면 기존 session/new 동작이 유지되어야 합니다', async () => {
+      const connectPromise = connection.connect('/test/workspace');
+      await wait();
+
+      const initReq = parseMessage(mock.stdin.written[0]);
+      mock.stdout.push(
+        `${JSON.stringify({
+          jsonrpc: '2.0',
+          id: initReq.id,
+          result: { protocolVersion: 1, agentCapabilities: {} },
+        })}\n`,
+      );
+
+      await wait();
+
+      const sessionReq = parseMessage(mock.stdin.written[1]);
+      expect(sessionReq.method).toBe('session/new');
+
+      mock.stdout.push(
+        `${JSON.stringify({
+          jsonrpc: '2.0',
+          id: sessionReq.id,
+          result: { sessionId: 'new-session-abc' },
+        })}\n`,
+      );
+
+      const session = await connectPromise;
+      expect(session.sessionId).toBe('new-session-abc');
+      expect(connection.connectionState).toBe('ready');
+    });
+
+    it('session/load 미지원 에이전트에서 sessionId 전달 시 에러가 발생해야 합니다', async () => {
+      const connectPromise = connection.connect('/test/workspace', 'some-session');
+      await wait();
+
+      // initialize 응답 전에 loadSession을 제거하여 미지원 상태 시뮬레이션
+      const agentProxy = connection.getAgentProxy() as { loadSession?: unknown };
+      agentProxy.loadSession = undefined;
+
+      const initReq = parseMessage(mock.stdin.written[0]);
+      mock.stdout.push(
+        `${JSON.stringify({
+          jsonrpc: '2.0',
+          id: initReq.id,
+          result: { protocolVersion: 1, agentCapabilities: {} },
+        })}\n`,
+      );
+
+      await expect(connectPromise).rejects.toThrow('session/load를 지원하지 않습니다');
     });
 
     it('initTimeout 내 initialize 응답이 없으면 타임아웃되어야 합니다', async () => {

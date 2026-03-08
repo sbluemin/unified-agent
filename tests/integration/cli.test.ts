@@ -92,6 +92,8 @@ describe('CLI 바이너리: 인자 파싱', () => {
     expect(exitCode).toBe(0);
     expect(stdout).toContain('unified-agent');
     expect(stdout).toContain('--cli');
+    expect(stdout).toContain('--session');
+    expect(stdout).toContain('-s');
     expect(stdout).toContain('--model');
     expect(stdout).toContain('--effort');
     expect(stdout).toContain('--json');
@@ -127,6 +129,13 @@ describe('CLI 바이너리: 인자 파싱', () => {
     expect(stderr).toContain('알 수 없는 effort');
     expect(stderr).toContain('low');
     console.log('  ✅ 잘못된 effort 검증 확인');
+  });
+
+  it('빈 --session 값이면 에러를 반환해야 합니다', () => {
+    const { stderr, exitCode } = runCli(['-s', '', '안녕']);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain('--session 값은 비어 있을 수 없습니다');
+    console.log('  ✅ 빈 --session 검증 확인');
   });
 
   it('알 수 없는 옵션이면 에러를 반환해야 합니다', () => {
@@ -180,6 +189,9 @@ expect(stdout).not.toContain('●');
       const result = JSON.parse(stdout.trim());
       expect(result).toHaveProperty('response');
       expect(result).toHaveProperty('cli', cli);
+      expect(result).toHaveProperty('sessionId');
+      expect(typeof result.sessionId).toBe('string');
+      expect(result.sessionId.length).toBeGreaterThan(0);
       expect(result.response).toContain('2');
 
       console.log(`  📥 JSON: ${JSON.stringify(result).slice(0, 200)}`);

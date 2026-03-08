@@ -89,4 +89,6 @@ export interface UnifiedClientOptions extends ConnectionOptions {
   cli?: CliType;
   /** 자동 권한 승인 */
   autoApprove?: boolean;
+  /** 재개할 기존 세션 ID */
+  sessionId?: string;
 }

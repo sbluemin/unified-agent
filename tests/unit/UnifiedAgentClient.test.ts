@@ -111,6 +111,46 @@ describe('UnifiedAgentClient 인스턴스', () => {
     expect(client.getAvailableModels()).toBeNull();
   });
 
+  it('sessionId 옵션이 AcpConnection.connect()에 전달되어야 합니다', async () => {
+    const connectSpy = vi
+      .spyOn(AcpConnection.prototype, 'connect')
+      .mockResolvedValue({ sessionId: 'resume-123' });
+    vi.spyOn(AcpConnection.prototype, 'disconnect').mockResolvedValue();
+
+    const client = new UnifiedAgentClient();
+    await client.connect({
+      cwd: process.cwd(),
+      cli: 'claude',
+      sessionId: 'resume-123',
+    });
+
+    expect(connectSpy).toHaveBeenCalledWith(
+      process.cwd(),
+      'resume-123',
+    );
+
+    expect(client.getConnectionInfo().sessionId).toBe('resume-123');
+
+    await client.disconnect();
+  });
+
+  it('sessionId 없이 connect하면 AcpConnection.connect()에 undefined가 전달되어야 합니다', async () => {
+    const connectSpy = vi
+      .spyOn(AcpConnection.prototype, 'connect')
+      .mockResolvedValue({ sessionId: 'new-session' });
+    vi.spyOn(AcpConnection.prototype, 'disconnect').mockResolvedValue();
+
+    const client = new UnifiedAgentClient();
+    await client.connect({ cwd: process.cwd(), cli: 'gemini' });
+
+    expect(connectSpy).toHaveBeenCalledWith(
+      process.cwd(),
+      undefined,
+    );
+
+    await client.disconnect();
+  });
+
   it('connect 실패 시 부분적으로 생성된 연결을 정리해야 합니다', async () => {
     const connectSpy = vi
       .spyOn(AcpConnection.prototype, 'connect')

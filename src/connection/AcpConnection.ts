@@ -134,7 +134,7 @@ export class AcpConnection extends BaseConnection {
    * @param workspace - 작업 디렉토리 경로
    * @returns 세션 정보
    */
-  async connect(workspace: string): Promise<NewSessionResponse> {
+  async connect(workspace: string, sessionId?: string): Promise<NewSessionResponse> {
     // 1. 프로세스 spawn + Web Streams 생성
     const { stream } = this.spawnProcess();
     this.setState('initializing');
@@ -177,20 +177,39 @@ export class AcpConnection extends BaseConnection {
         'initialize',
       );
 
-      // 4. 세션 생성 (공식 ACP 스키마: cwd + mcpServers)
-      const session = await this.withTimeout(
-        agent.newSession({
-          cwd: workspace,
-          mcpServers: [],
-        }),
-        this.initTimeout,
-        'session/new',
-      );
+      // 4. 세션 생성 또는 기존 세션 로드
+      let session: NewSessionResponse;
+      if (sessionId) {
+        if (!agent.loadSession) {
+          throw new Error('연결된 에이전트가 session/load를 지원하지 않습니다');
+        }
+        const loadResult = await this.withTimeout(
+          agent.loadSession({ sessionId, cwd: workspace, mcpServers: [] }),
+          this.initTimeout,
+          'session/load',
+        );
+        // LoadSessionResponse에 sessionId를 합쳐 NewSessionResponse와 구조적 동일성 보장
+        session = { ...loadResult, sessionId } as LoadSessionResponse & NewSessionResponse;
+      } else {
+        session = await this.withTimeout(
+          agent.newSession({
+            cwd: workspace,
+            mcpServers: [],
+          }),
+          this.initTimeout,
+          'session/new',
+        );
+      }
 
       this.setState('ready');
       return session;
     } catch (error) {
       this.setState('error');
+      try {
+        await this.disconnect();
+      } catch {
+        // 정리 실패는 원본 예외를 가리지 않음
+      }
       throw error;
     }
   }

@@ -29,6 +29,7 @@ try {
   parsed = parseArgs({
     options: {
       cli: { type: 'string', short: 'c' },
+      session: { type: 'string', short: 's' },
       model: { type: 'string', short: 'm' },
       effort: { type: 'string', short: 'e' },
       cwd: { type: 'string', short: 'd' },
@@ -60,6 +61,7 @@ ${c.bold('사용법')}
 
 ${c.bold('옵션')}
   -c, --cli <name>      CLI 선택 (gemini | claude | codex)
+  -s, --session <id>    이전 세션 재개
   -m, --model <name>    모델 지정
   -e, --effort <level>  reasoning effort (none | low | medium | high | xhigh)
   -d, --cwd <path>      작업 디렉토리 (기본: 현재 디렉토리)
@@ -80,6 +82,9 @@ ${c.bold('예시')}
 
   ${c.dim('# stdin 파이프')}
   cat error.log | unified-agent -c gemini "이 에러를 분석해줘"
+
+  ${c.dim('# 이전 세션 재개')}
+  unified-agent -s <sessionId> "이어서 설명해줘"
 
   ${c.dim('# JSON 출력 (스크립트에서 파싱 용도)')}
   unified-agent --json -c claude "요약해줘" | jq .response
@@ -149,6 +154,13 @@ if (cliOpt && !VALID_CLIS.includes(cliOpt as CliType)) {
   process.exit(1);
 }
 
+const rawSessionOpt = values.session as string | undefined;
+const sessionOpt = rawSessionOpt?.trim();
+if (rawSessionOpt !== undefined && !sessionOpt) {
+  process.stderr.write(`${ce.red('오류')}: --session 값은 비어 있을 수 없습니다.\n`);
+  process.exit(1);
+}
+
 const effortOpt = values.effort as string | undefined;
 if (effortOpt && !VALID_EFFORTS.includes(effortOpt as (typeof VALID_EFFORTS)[number])) {
   process.stderr.write(
@@ -182,9 +194,11 @@ const startTime = Date.now();
 
 const client = new UnifiedAgentClient();
 let fullResponse = '';
+let isLivePrompt = false;
 
-// 이벤트 리스너 설정
+// 이벤트 리스너 설정 (세션 재개 시 replay 이벤트는 무시)
 client.on('messageChunk', (text) => {
+  if (!isLivePrompt) return;
   fullResponse += text;
   if (!jsonMode) {
     process.stdout.write(text);
@@ -193,10 +207,12 @@ client.on('messageChunk', (text) => {
 
 if (!jsonMode) {
   client.on('thoughtChunk', (text) => {
+    if (!isLivePrompt) return;
     process.stderr.write(ce.dim(text));
   });
 
   client.on('toolCall', (title, status) => {
+    if (!isLivePrompt) return;
     if (status === 'running' || status === 'pending') {
       process.stderr.write(ce.dim(`  ▶ ${title}\n`));
     }
@@ -222,6 +238,7 @@ try {
     autoApprove: true,
     yoloMode: values.yolo as boolean,
     model: values.model as string | undefined,
+    sessionId: sessionOpt,
   });
 
   // reasoning effort 설정
@@ -241,24 +258,33 @@ try {
     }
   }
 
+  // 세션 로드 중 재생된 이벤트 무시 후, 현재 프롬프트부터 출력 시작
+  fullResponse = '';
+  isLivePrompt = true;
+
   await client.sendMessage(prompt);
 
   if (!jsonMode) {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    process.stderr.write(`\n\n${ce.bold(ce.green('●'))} ${ce.dim(`완료 (${elapsed}s)`)}\n`);
+    const sid = client.getConnectionInfo().sessionId;
+    const sessionInfo = sid ? ` ${ce.dim('|')} ${ce.dim(`세션: ${sid}`)}` : '';
+    process.stderr.write(`\n\n${ce.bold(ce.green('●'))} ${ce.dim(`완료 (${elapsed}s)`)}${sessionInfo}\n`);
   }
 
   if (jsonMode) {
+    const sid = client.getConnectionInfo().sessionId;
     process.stdout.write(
-      JSON.stringify({ response: fullResponse, cli: result.cli }) + '\n',
+      JSON.stringify({ response: fullResponse, cli: result.cli, sessionId: sid }) + '\n',
     );
   }
 } catch (err) {
+  const sid = client.getConnectionInfo().sessionId;
   if (!jsonMode) {
-    process.stderr.write(`\n${ce.red('오류')}: ${(err as Error).message}\n`);
+    const sessionInfo = sid ? ` ${ce.dim(`(세션: ${sid})`)}` : '';
+    process.stderr.write(`\n${ce.red('오류')}: ${(err as Error).message}${sessionInfo}\n`);
   } else {
     process.stdout.write(
-      JSON.stringify({ error: (err as Error).message }) + '\n',
+      JSON.stringify({ error: (err as Error).message, sessionId: sid ?? null }) + '\n',
     );
   }
   process.exitCode = 1;
