@@ -20,10 +20,23 @@ export {
   type UnifiedClientEvents,
   type ConnectResult,
   type ConnectionInfo,
-  type AvailableModelsResult,
-  type ModelInfo,
   type IUnifiedAgentClient,
 } from './client/UnifiedAgentClient.js';
+
+// === 모델 레지스트리 ===
+export {
+  getModelsRegistry,
+  getProviderModels,
+  getProviderModelIds,
+  getReasoningEffortLevels,
+} from './models/ModelRegistry.js';
+
+export type {
+  ModelsRegistry,
+  ProviderModelInfo,
+  ModelEntry,
+  ReasoningEffort,
+} from './models/schemas.js';
 
 // === 연결 모듈 ===
 export { BaseConnection, type BaseConnectionOptions } from './connection/BaseConnection.js';

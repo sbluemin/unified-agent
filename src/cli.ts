@@ -7,6 +7,7 @@
 import { parseArgs } from 'node:util';
 import { UnifiedAgentClient } from './client/UnifiedAgentClient.js';
 import type { CliType } from './types/config.js';
+import { getModelsRegistry, getProviderModels } from './models/ModelRegistry.js';
 
 // ─── ANSI 색상 (TTY일 때만 활성화) ─────────────────────────
 
@@ -26,7 +27,7 @@ const c = {
 // ─── 인자 파싱 ────────────────────────────────────────────
 
 const VALID_CLIS = ['gemini', 'claude', 'codex'] as const;
-const VALID_EFFORTS = ['low', 'medium', 'high', 'xhigh'] as const;
+const VALID_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh'] as const;
 
 let parsed: ReturnType<typeof parseArgs>;
 try {
@@ -38,6 +39,7 @@ try {
       cwd: { type: 'string', short: 'd' },
       yolo: { type: 'boolean', default: false },
       json: { type: 'boolean', default: false },
+      'list-models': { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h', default: false },
     },
     allowPositionals: true,
@@ -64,10 +66,11 @@ ${c.bold('사용법')}
 ${c.bold('옵션')}
   -c, --cli <name>      CLI 선택 (gemini | claude | codex)
   -m, --model <name>    모델 지정
-  -e, --effort <level>  reasoning effort (low | medium | high | xhigh)
+  -e, --effort <level>  reasoning effort (none | low | medium | high | xhigh)
   -d, --cwd <path>      작업 디렉토리 (기본: 현재 디렉토리)
       --yolo             자동 권한 승인 모드
       --json             JSON 출력
+      --list-models      사용 가능한 모델 목록 출력
   -h, --help             도움말
 
 ${c.bold('예시')}
@@ -87,6 +90,57 @@ ${c.bold('예시')}
   unified-agent --json -c claude "요약해줘" | jq .response
 `;
   process.stdout.write(help.trimStart());
+  process.exit(0);
+}
+
+// ─── 모델 목록 출력 ──────────────────────────────────────
+
+if (values['list-models']) {
+  const cliFilter = values.cli as string | undefined;
+  const jsonOut = values.json as boolean;
+  const registry = getModelsRegistry();
+
+  // 출력 대상 프로바이더 결정
+  const providerKeys = cliFilter
+    ? [cliFilter]
+    : Object.keys(registry.providers);
+
+  if (cliFilter && !registry.providers[cliFilter]) {
+    process.stderr.write(
+      `${c.red('오류')}: 알 수 없는 CLI "${cliFilter}". 사용 가능: ${Object.keys(registry.providers).join(', ')}\n`,
+    );
+    process.exit(1);
+  }
+
+  if (jsonOut) {
+    // JSON 모드: 필터된 레지스트리 출력
+    const filtered = cliFilter
+      ? { [cliFilter]: registry.providers[cliFilter] }
+      : registry.providers;
+    process.stdout.write(JSON.stringify(filtered, null, 2) + '\n');
+  } else {
+    // TTY: 테이블 형태 출력
+    for (const key of providerKeys) {
+      const provider = getProviderModels(key as CliType);
+      process.stdout.write(`\n${c.bold(provider.name)} ${c.dim(`(${key})`)}\n`);
+      process.stdout.write(`${c.dim('기본 모델:')} ${provider.defaultModel}\n`);
+
+      if (provider.reasoningEffort.supported) {
+        process.stdout.write(
+          `${c.dim('reasoning effort:')} ${provider.reasoningEffort.levels.join(', ')} ${c.dim(`(기본: ${provider.reasoningEffort.default})`)}\n`,
+        );
+      }
+
+      process.stdout.write('\n');
+      for (const model of provider.models) {
+        const isDefault = model.modelId === provider.defaultModel;
+        const marker = isDefault ? c.green('*') : ' ';
+        process.stdout.write(`  ${marker} ${c.cyan(model.modelId)}  ${c.dim(model.name)}\n`);
+      }
+    }
+    process.stdout.write('\n');
+  }
+
   process.exit(0);
 }
 

@@ -17,6 +17,7 @@
   },
   "files": [
     "dist",
+    "models.json",
     "README.md"
   ],
   "scripts": {

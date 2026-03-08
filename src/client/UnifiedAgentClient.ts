@@ -27,7 +27,6 @@ import type {
   IUnifiedAgentClient,
   ConnectResult,
   ConnectionInfo,
-  AvailableModelsResult,
   UnifiedClientEvents,
 } from './IUnifiedAgentClient.js';
 import { AcpConnection } from '../connection/AcpConnection.js';
@@ -37,10 +36,11 @@ import {
   getBackendConfig,
 } from '../config/CliConfigs.js';
 import { cleanEnvironment } from '../utils/env.js';
+import { getProviderModels } from '../models/ModelRegistry.js';
+import type { ProviderModelInfo } from '../models/schemas.js';
 
 // 인터페이스 파일에서 타입 re-export
-export type { UnifiedClientEvents, ConnectResult, ConnectionInfo, AvailableModelsResult, IUnifiedAgentClient } from './IUnifiedAgentClient.js';
-export type { ModelInfo } from './IUnifiedAgentClient.js';
+export type { UnifiedClientEvents, ConnectResult, ConnectionInfo, IUnifiedAgentClient } from './IUnifiedAgentClient.js';
 
 /**
  * 통합 에이전트 클라이언트.
@@ -51,8 +51,6 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
   private activeCli: CliType | null = null;
   private sessionId: string | null = null;
   private sessionCwd: string | null = null;
-  /** session/new 또는 session/load 응답에서 캐싱된 모델 상태 */
-  private cachedModels: AvailableModelsResult | null = null;
   private detector = new CliDetector();
 
   /** 타입 안전한 이벤트 리스너 등록 */
@@ -182,7 +180,6 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
     this.activeCli = cli;
     this.sessionId = session.sessionId;
     this.sessionCwd = options.cwd;
-    this.updateCachedModels(session);
 
     return {
       cli,
@@ -275,13 +272,15 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
   }
 
   /**
-   * 현재 CLI에서 사용 가능한 모델 목록을 반환합니다.
-   * session/new 또는 session/load 응답의 models 필드에서 가져옵니다.
+   * 사용 가능한 모델 목록을 정적 레지스트리에서 반환합니다.
    *
-   * @returns 모델 목록 및 현재 모델 (models 미지원 CLI인 경우 null)
+   * @param cli - CLI 타입 (생략 시 현재 연결된 CLI)
+   * @returns 프로바이더 모델 정보 (연결 전이고 cli 미지정 시 null)
    */
-  getAvailableModels(): AvailableModelsResult | null {
-    return this.cachedModels;
+  getAvailableModels(cli?: CliType): ProviderModelInfo | null {
+    const target = cli ?? this.activeCli;
+    if (!target) return null;
+    return getProviderModels(target);
   }
 
   /**
@@ -294,14 +293,13 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
       throw new Error('연결되어 있지 않습니다');
     }
 
-    const loaded = await this.acpConnection.loadSession({
+    await this.acpConnection.loadSession({
       sessionId,
       cwd: this.sessionCwd ?? process.cwd(),
       mcpServers: [],
     });
 
     this.sessionId = sessionId;
-    this.updateCachedModels(loaded);
   }
 
   /**
@@ -340,7 +338,6 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
     this.activeCli = null;
     this.sessionId = null;
     this.sessionCwd = null;
-    this.cachedModels = null;
   }
 
   /**
@@ -393,25 +390,6 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
     });
   }
 
-  /**
-   * newSession/loadSession 응답에서 모델 캐시를 갱신합니다.
-   */
-  private updateCachedModels(session: Pick<AcpSessionNewResult, 'models'>): void {
-    if (!session.models) {
-      this.cachedModels = null;
-      return;
-    }
-
-    this.cachedModels = {
-      availableModels: session.models.availableModels.map((m) => ({
-        modelId: m.modelId,
-        name: m.name,
-        description: m.description,
-      })),
-      currentModelId: session.models.currentModelId,
-    };
-  }
-
   private async cleanupFailedAcpConnection(): Promise<void> {
     if (!this.acpConnection) {
       return;
@@ -427,7 +405,6 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
     this.activeCli = null;
     this.sessionId = null;
     this.sessionCwd = null;
-    this.cachedModels = null;
   }
 
   /**

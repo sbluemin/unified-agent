@@ -28,6 +28,9 @@ src/
 │   └── UnifiedAgentClient.ts   # 통합 클라이언트 (최상위 API)
 ├── detector/
 │   └── CliDetector.ts          # CLI 자동 감지
+├── models/
+│   ├── schemas.ts              # 모델 레지스트리 Zod 스키마 + 타입
+│   └── ModelRegistry.ts        # 정적 모델 레지스트리 (models.json 기반)
 ├── config/
 │   └── CliConfigs.ts           # CLI별 spawn 설정
 └── utils/

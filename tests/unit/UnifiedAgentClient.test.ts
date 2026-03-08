@@ -10,6 +10,10 @@ import {
   killProcess,
   resolveNpxPath,
   buildNpxArgs,
+  getModelsRegistry,
+  getProviderModels,
+  getProviderModelIds,
+  getReasoningEffortLevels,
 } from '../../src/index.js';
 
 describe('Public API Exports', () => {
@@ -41,6 +45,13 @@ describe('Public API Exports', () => {
     expect(killProcess).toBeDefined();
     expect(resolveNpxPath).toBeDefined();
     expect(buildNpxArgs).toBeDefined();
+  });
+
+  it('모델 레지스트리 함수를 내보내야 합니다', () => {
+    expect(getModelsRegistry).toBeDefined();
+    expect(getProviderModels).toBeDefined();
+    expect(getProviderModelIds).toBeDefined();
+    expect(getReasoningEffortLevels).toBeDefined();
   });
 });
 
@@ -87,14 +98,16 @@ describe('UnifiedAgentClient 인스턴스', () => {
     await expect(client.disconnect()).resolves.not.toThrow();
   });
 
-  it('연결 전 getAvailableModels는 null을 반환해야 합니다', () => {
+  it('연결 전에도 cli를 지정하면 getAvailableModels가 유효한 값을 반환해야 합니다', () => {
     const client = new UnifiedAgentClient();
-    expect(client.getAvailableModels()).toBeNull();
+    const models = client.getAvailableModels('claude');
+    expect(models).not.toBeNull();
+    expect(models!.defaultModel).toBe('opus');
+    expect(models!.models.length).toBeGreaterThan(0);
   });
 
-  it('disconnect 후 getAvailableModels는 null을 반환해야 합니다', async () => {
+  it('연결 전 cli 미지정 시 getAvailableModels는 null을 반환해야 합니다', () => {
     const client = new UnifiedAgentClient();
-    await client.disconnect();
     expect(client.getAvailableModels()).toBeNull();
   });
 
