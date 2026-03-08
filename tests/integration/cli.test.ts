@@ -154,11 +154,14 @@ function createCliE2eTest(cli: string, command: string) {
 
       console.log(`  📥 stdout: "${stdout.trim().slice(0, 200)}"`);
       console.log(`  📝 stderr: "${stderr.trim().slice(0, 200)}"`);
+expect(exitCode).toBe(0);
+// pretty 모드에서 응답 텍스트는 stdout으로 출력
+expect(stdout).toContain('2');
+// stdout에는 불필요한 상태 헤더나 ANSI 시퀀스가 없어야 함 (순수 응답만)
+expect(stdout).not.toContain('unified-agent');
+expect(stdout).not.toContain('●');
 
-      expect(exitCode).toBe(0);
-      // pretty 모드에서 응답 텍스트는 stdout으로 출력
-      expect(stdout).toContain('2');
-      // stderr에 헤더가 포함
+// stderr에는 상태 헤더와 시간이 포함되어야 함
       expect(stderr).toContain('unified-agent');
       console.log(`  ✅ ${cli} pretty 모드 통과`);
     }, 180_000);

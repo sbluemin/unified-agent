@@ -9,20 +9,15 @@ import { UnifiedAgentClient } from './client/UnifiedAgentClient.js';
 import type { CliType } from './types/config.js';
 import { getModelsRegistry, getProviderModels } from './models/ModelRegistry.js';
 
+import picocolors from 'picocolors';
+
 // ─── ANSI 색상 (TTY일 때만 활성화) ─────────────────────────
 
 const isTTY = process.stdout.isTTY ?? false;
 const isErrTTY = process.stderr.isTTY ?? false;
 
-const c = {
-  bold: (s: string) => (isTTY ? `\x1b[1m${s}\x1b[0m` : s),
-  dim: (s: string) => (isTTY ? `\x1b[2m${s}\x1b[0m` : s),
-  cyan: (s: string) => (isTTY ? `\x1b[36m${s}\x1b[0m` : s),
-  green: (s: string) => (isTTY ? `\x1b[32m${s}\x1b[0m` : s),
-  red: (s: string) => (isTTY ? `\x1b[31m${s}\x1b[0m` : s),
-  yellow: (s: string) => (isTTY ? `\x1b[33m${s}\x1b[0m` : s),
-  errDim: (s: string) => (isErrTTY ? `\x1b[2m${s}\x1b[0m` : s),
-};
+const c = picocolors.createColors(picocolors.isColorSupported && isTTY);
+const ce = picocolors.createColors(picocolors.isColorSupported && isErrTTY);
 
 // ─── 인자 파싱 ────────────────────────────────────────────
 
@@ -46,7 +41,7 @@ try {
     strict: true,
   });
 } catch (err) {
-  process.stderr.write(`${c.red('오류')}: ${(err as Error).message}\n`);
+  process.stderr.write(`${ce.red('오류')}: ${(err as Error).message}\n`);
   process.stderr.write(`도움말: unified-agent --help\n`);
   process.exit(1);
 }
@@ -107,7 +102,7 @@ if (values['list-models']) {
 
   if (cliFilter && !registry.providers[cliFilter]) {
     process.stderr.write(
-      `${c.red('오류')}: 알 수 없는 CLI "${cliFilter}". 사용 가능: ${Object.keys(registry.providers).join(', ')}\n`,
+      `${ce.red('오류')}: 알 수 없는 CLI "${cliFilter}". 사용 가능: ${Object.keys(registry.providers).join(', ')}\n`,
     );
     process.exit(1);
   }
@@ -149,7 +144,7 @@ if (values['list-models']) {
 const cliOpt = values.cli as string | undefined;
 if (cliOpt && !VALID_CLIS.includes(cliOpt as CliType)) {
   process.stderr.write(
-    `${c.red('오류')}: 알 수 없는 CLI "${cliOpt}". 사용 가능: ${VALID_CLIS.join(', ')}\n`,
+    `${ce.red('오류')}: 알 수 없는 CLI "${cliOpt}". 사용 가능: ${VALID_CLIS.join(', ')}\n`,
   );
   process.exit(1);
 }
@@ -157,7 +152,7 @@ if (cliOpt && !VALID_CLIS.includes(cliOpt as CliType)) {
 const effortOpt = values.effort as string | undefined;
 if (effortOpt && !VALID_EFFORTS.includes(effortOpt as (typeof VALID_EFFORTS)[number])) {
   process.stderr.write(
-    `${c.red('오류')}: 알 수 없는 effort "${effortOpt}". 사용 가능: ${VALID_EFFORTS.join(', ')}\n`,
+    `${ce.red('오류')}: 알 수 없는 effort "${effortOpt}". 사용 가능: ${VALID_EFFORTS.join(', ')}\n`,
   );
   process.exit(1);
 }
@@ -175,7 +170,7 @@ if (!prompt && !process.stdin.isTTY) {
 }
 
 if (!prompt) {
-  process.stderr.write(`${c.red('오류')}: 프롬프트를 입력해주세요.\n`);
+  process.stderr.write(`${ce.red('오류')}: 프롬프트를 입력해주세요.\n`);
   process.stderr.write(`도움말: unified-agent --help\n`);
   process.exit(1);
 }
@@ -198,17 +193,17 @@ client.on('messageChunk', (text) => {
 
 if (!jsonMode) {
   client.on('thoughtChunk', (text) => {
-    process.stderr.write(c.errDim(text));
+    process.stderr.write(ce.dim(text));
   });
 
   client.on('toolCall', (title, status) => {
     if (status === 'running' || status === 'pending') {
-      process.stderr.write(c.errDim(`  ▶ ${title}\n`));
+      process.stderr.write(ce.dim(`  ▶ ${title}\n`));
     }
   });
 
   client.on('error', (err) => {
-    process.stderr.write(`\n${c.red('오류')}: ${err.message}\n`);
+    process.stderr.write(`\n${ce.red('오류')}: ${err.message}\n`);
   });
 }
 
@@ -218,7 +213,7 @@ try {
 
   if (!jsonMode) {
     const cliLabel = selectedCli ?? '자동 감지';
-    process.stderr.write(`${c.bold(c.cyan('●'))} ${c.bold('unified-agent')} ${c.dim(`(${cliLabel})`)}\n\n`);
+    process.stderr.write(`${ce.bold(ce.cyan('●'))} ${ce.bold('unified-agent')} ${ce.dim(`(${cliLabel})`)}\n\n`);
   }
 
   const result = await client.connect({
@@ -242,7 +237,7 @@ try {
     const cliName = result.cli;
     // 헤더에 실제 연결된 CLI 표시 (자동 감지된 경우)
     if (!selectedCli) {
-      process.stderr.write(`${c.dim(`  → ${cliName} 연결됨`)}\n\n`);
+      process.stderr.write(`${ce.dim(`  → ${cliName} 연결됨`)}\n\n`);
     }
   }
 
@@ -250,7 +245,7 @@ try {
 
   if (!jsonMode) {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    process.stderr.write(`\n\n${c.bold(c.green('●'))} ${c.dim(`완료 (${elapsed}s)`)}\n`);
+    process.stderr.write(`\n\n${ce.bold(ce.green('●'))} ${ce.dim(`완료 (${elapsed}s)`)}\n`);
   }
 
   if (jsonMode) {
@@ -260,7 +255,7 @@ try {
   }
 } catch (err) {
   if (!jsonMode) {
-    process.stderr.write(`\n${c.red('오류')}: ${(err as Error).message}\n`);
+    process.stderr.write(`\n${ce.red('오류')}: ${(err as Error).message}\n`);
   } else {
     process.stdout.write(
       JSON.stringify({ error: (err as Error).message }) + '\n',

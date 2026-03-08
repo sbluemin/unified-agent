@@ -2,14 +2,14 @@
 
 ## 프로젝트 개요
 
-Gemini CLI, Claude Code, Codex CLI를 ACP 프로토콜로 통합하는 zero-dependency TypeScript SDK.
+Gemini CLI, Claude Code, Codex CLI를 ACP 프로토콜로 통합하는 최소 의존성 지향 TypeScript SDK.
 
 ## 기술 스택
 
 - **언어**: TypeScript (ES2022, strict 모드)
 - **빌드**: tsup (ESM + CJS 듀얼 출력)
 - **테스트**: Vitest
-- **런타임 의존성**: `@agentclientprotocol/sdk`, `zod`
+- **런타임 의존성**: `@agentclientprotocol/sdk`, `zod`, `picocolors`
 - **Node.js**: >= 18.0.0
 
 ## 프로젝트 구조
@@ -90,7 +90,7 @@ npm run build
 - `describe.skipIf(!isCliInstalled('xxx'))` 패턴으로 설치되지 않은 CLI 자동 건너뛰기.
 
 ### 의존성
-- **런타임 의존성 2개**: `@agentclientprotocol/sdk`(공식 ACP SDK) + `zod`(스키마 검증).
+- **런타임 의존성 최소화**: `@agentclientprotocol/sdk`(공식 ACP SDK) + `zod`(스키마 검증) + `picocolors`(CLI 전용 스타일링).
 - 개발 도구만 devDependencies에 추가: `typescript`, `tsup`, `vitest`, `@types/node`.
 
 ## CLI별 ACP 지원 현황
