@@ -68,11 +68,22 @@ export class BaseConnection extends EventEmitter {
   protected spawnProcess(): { child: ChildProcess; stream: Stream } {
     this.setState('connecting');
 
-    const child = spawn(this.command, this.args, {
+    // Windows에서 .cmd 래퍼(npx.cmd, gemini.cmd 등)를 실행하려면 cmd.exe가 필요합니다.
+    // shell: true를 사용하면 Node.js가 내부적으로 cmd.exe /d /s /c "..." 형태로 감싸면서
+    // windowsVerbatimArguments=true를 강제하고 stdio 파이프가 불안정해집니다 (EPIPE).
+    // cmd.exe /c를 직접 spawn(shell: false)하면 Node.js 기본 인자 이스케이프가 적용되어
+    // stdio 파이프가 안정적으로 동작합니다.
+    const command = isWindows()
+      ? ((this.env.ComSpec as string) ?? 'cmd.exe')
+      : this.command;
+    const args = isWindows()
+      ? ['/c', this.command, ...this.args]
+      : this.args;
+
+    const child = spawn(command, args, {
       cwd: this.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: this.env as NodeJS.ProcessEnv,
-      shell: isWindows(),
     });
 
     this.childExitPromise = new Promise<void>((resolve) => {
