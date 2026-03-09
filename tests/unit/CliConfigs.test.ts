@@ -36,6 +36,19 @@ describe('createSpawnConfig', () => {
     expect(config.useNpx).toBe(false);
   });
 
+  it('gemini는 모델 지정 시 --model 인자를 spawn args에 포함해야 합니다', () => {
+    const config = createSpawnConfig('gemini', {
+      ...defaultOpts,
+      model: 'gemini-3-flash-preview',
+    });
+
+    expect(config.args).toEqual([
+      '--experimental-acp',
+      '--model',
+      'gemini-3-flash-preview',
+    ]);
+  });
+
   it('claude는 npx를 사용해야 합니다', () => {
     const config = createSpawnConfig('claude', defaultOpts);
     expect(config.useNpx).toBe(true);

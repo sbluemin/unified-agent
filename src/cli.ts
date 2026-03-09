@@ -15,6 +15,7 @@ import { createInterface } from 'node:readline';
 import { UnifiedAgentClient } from './client/UnifiedAgentClient.js';
 import type { CliType } from './types/config.js';
 import { getModelsRegistry, getProviderModels } from './models/ModelRegistry.js';
+import { isWindows } from './utils/env.js';
 
 import picocolors from 'picocolors';
 
@@ -273,7 +274,14 @@ async function runCodexDirect(options: CodexDirectOptions): Promise<void> {
   let threadId: string | null = null;
   let fullResponse = '';
 
-  const child = spawn('codex', args, {
+  // Windows에서는 codex가 .cmd 래퍼로 설치되므로 cmd.exe를 통해 실행.
+  // shell: true를 사용하면 windowsVerbatimArguments가 강제 true가 되어
+  // 공백 포함 인자(프롬프트 등)가 분리되는 문제 발생.
+  // cmd.exe를 직접 spawn(shell: false)하면 Node.js 기본 인자 이스케이프가 적용됨.
+  const codexCommand = isWindows() ? (process.env.ComSpec ?? 'cmd.exe') : 'codex';
+  const codexArgs = isWindows() ? ['/c', 'codex', ...args] : args;
+
+  const child = spawn(codexCommand, codexArgs, {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: process.env,
   });

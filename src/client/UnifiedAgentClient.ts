@@ -35,7 +35,7 @@ import {
   createSpawnConfig,
   getBackendConfig,
 } from '../config/CliConfigs.js';
-import { cleanEnvironment } from '../utils/env.js';
+import { cleanEnvironment, isWindows } from '../utils/env.js';
 import { getProviderModels } from '../models/ModelRegistry.js';
 import type { ProviderModelInfo } from '../models/schemas.js';
 
@@ -126,6 +126,11 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
     const cleanEnv = cleanEnvironment(process.env, options.env);
 
     const env: Record<string, string | undefined> = { ...cleanEnv };
+
+    if (cli === 'gemini' && isWindows() && env.GEMINI_CLI_NO_RELAUNCH === undefined) {
+      // Gemini CLI는 Windows에서 self-relaunch 경로를 타면 ACP stdio 핸드셰이크가 멈출 수 있어 비활성화합니다.
+      env.GEMINI_CLI_NO_RELAUNCH = 'true';
+    }
 
     this.acpConnection = new AcpConnection({
       command: spawnConfig.command,

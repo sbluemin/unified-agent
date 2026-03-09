@@ -88,6 +88,11 @@ export function createSpawnConfig(
   const command = options.cliPath ?? backend.cliCommand;
   const args = backend.acpArgs ? [...backend.acpArgs] : [];
 
+  if (cli === 'gemini' && options.model) {
+    // Gemini ACP는 세션 시작 후 모델 변경 지원이 제한적이어서 spawn 시점에 모델을 넘깁니다.
+    args.push('--model', options.model);
+  }
+
   return {
     command,
     args,

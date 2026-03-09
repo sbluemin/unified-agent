@@ -162,6 +162,55 @@ describe('UnifiedAgentClient 인스턴스', () => {
     await client.disconnect();
   });
 
+  it('gemini 연결 시 Windows에서는 GEMINI_CLI_NO_RELAUNCH를 자동 주입해야 합니다', async () => {
+    vi.spyOn(AcpConnection.prototype, 'connect')
+      .mockResolvedValue({ sessionId: 'new-session' });
+    vi.spyOn(AcpConnection.prototype, 'disconnect').mockResolvedValue();
+
+    const client = new UnifiedAgentClient();
+    await client.connect({ cwd: process.cwd(), cli: 'gemini' });
+
+    const connection = (
+      client as unknown as {
+        acpConnection: { env: Record<string, string | undefined> } | null;
+      }
+    ).acpConnection;
+
+    expect(connection).not.toBeNull();
+
+    if (process.platform === 'win32') {
+      expect(connection!.env.GEMINI_CLI_NO_RELAUNCH).toBe('true');
+    } else {
+      expect(connection!.env.GEMINI_CLI_NO_RELAUNCH).toBeUndefined();
+    }
+
+    await client.disconnect();
+  });
+
+  it('사용자가 지정한 GEMINI_CLI_NO_RELAUNCH 값은 덮어쓰지 않아야 합니다', async () => {
+    vi.spyOn(AcpConnection.prototype, 'connect')
+      .mockResolvedValue({ sessionId: 'new-session' });
+    vi.spyOn(AcpConnection.prototype, 'disconnect').mockResolvedValue();
+
+    const client = new UnifiedAgentClient();
+    await client.connect({
+      cwd: process.cwd(),
+      cli: 'gemini',
+      env: { GEMINI_CLI_NO_RELAUNCH: 'custom' },
+    });
+
+    const connection = (
+      client as unknown as {
+        acpConnection: { env: Record<string, string | undefined> } | null;
+      }
+    ).acpConnection;
+
+    expect(connection).not.toBeNull();
+    expect(connection!.env.GEMINI_CLI_NO_RELAUNCH).toBe('custom');
+
+    await client.disconnect();
+  });
+
   it('connect 실패 시 부분적으로 생성된 연결을 정리해야 합니다', async () => {
     const connectSpy = vi
       .spyOn(AcpConnection.prototype, 'connect')
