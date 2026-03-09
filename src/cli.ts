@@ -19,6 +19,15 @@ import { isWindows } from './utils/env.js';
 
 import picocolors from 'picocolors';
 
+// stdout에 데이터를 쓰고 flush가 완료된 후 resolve하는 헬퍼
+// process.stdout.write()는 파이프 환경(non-TTY)에서 비동기이므로,
+// process.exit() 전에 write 콜백을 기다려야 데이터 유실을 방지할 수 있음
+function stdoutWrite(data: string): Promise<void> {
+  return new Promise<void>((resolve) => {
+    process.stdout.write(data, () => resolve());
+  });
+}
+
 // ─── ANSI 색상 (TTY일 때만 활성화) ─────────────────────────
 
 const isTTY = process.stdout.isTTY ?? false;
@@ -360,7 +369,7 @@ async function runCodexDirect(options: CodexDirectOptions): Promise<void> {
   }
 
   if (options.jsonMode) {
-    process.stdout.write(
+    await stdoutWrite(
       JSON.stringify({ response: fullResponse, cli: 'codex', sessionId: threadId }) + '\n',
     );
   }
@@ -471,7 +480,7 @@ try {
 
   if (jsonMode) {
     const sid = client.getConnectionInfo().sessionId;
-    process.stdout.write(
+    await stdoutWrite(
       JSON.stringify({ response: fullResponse, cli: result.cli, sessionId: sid }) + '\n',
     );
   }
@@ -481,7 +490,7 @@ try {
     const sessionInfo = sid ? ` ${ce.dim(`(세션: ${sid})`)}` : '';
     process.stderr.write(`\n${ce.red('오류')}: ${(err as Error).message}${sessionInfo}\n`);
   } else {
-    process.stdout.write(
+    await stdoutWrite(
       JSON.stringify({ error: (err as Error).message, sessionId: sid ?? null }) + '\n',
     );
   }
