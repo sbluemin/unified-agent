@@ -61,11 +61,13 @@ export class BaseConnection extends EventEmitter {
   }
 
   /**
-   * CLI 프로세스를 spawn하고 ACP SDK 호환 Stream을 생성합니다.
+   * CLI 프로세스를 spawn하고 기본 이벤트 핸들링을 설정합니다.
+   * stderr 로그 수집, 프로세스 종료/에러 처리를 포함합니다.
+   * ACP ndJsonStream 변환 없이 raw child process만 반환합니다.
    *
-   * @returns 공식 ACP SDK의 Stream (ndJsonStream)
+   * @returns spawn된 child process
    */
-  protected spawnProcess(): { child: ChildProcess; stream: Stream } {
+  protected spawnRawProcess(): ChildProcess {
     this.setState('connecting');
 
     // Windows에서 .cmd 래퍼(npx.cmd, gemini.cmd 등)를 실행하려면 cmd.exe가 필요합니다.
@@ -114,6 +116,19 @@ export class BaseConnection extends EventEmitter {
       this.emit('error', err);
     });
 
+    this.child = child;
+    return child;
+  }
+
+  /**
+   * CLI 프로세스를 spawn하고 ACP SDK 호환 Stream을 생성합니다.
+   * spawnRawProcess()를 호출한 후 ndJsonStream 변환을 추가합니다.
+   *
+   * @returns 공식 ACP SDK의 Stream (ndJsonStream)
+   */
+  protected spawnProcess(): { child: ChildProcess; stream: Stream } {
+    const child = this.spawnRawProcess();
+
     // Node.js Stream → Web Streams 변환
     const webWritable = Writable.toWeb(child.stdin!) as WritableStream<Uint8Array>;
     const webReadable = Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>;
@@ -121,7 +136,6 @@ export class BaseConnection extends EventEmitter {
     // 공식 ACP SDK의 ndJsonStream으로 변환
     const stream = ndJsonStream(webWritable, webReadable);
 
-    this.child = child;
     this.acpStream = stream;
     this.setState('connected');
 
