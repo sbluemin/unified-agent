@@ -254,6 +254,7 @@ function buildCodexExecArgs(options: CodexDirectOptions): string[] {
   }
 
   args.push('--json');
+  args.push('--skip-git-repo-check');
 
   // /fast 모드 기본 적용
   args.push('-c', 'service_tier="fast"');
