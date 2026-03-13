@@ -226,6 +226,10 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
     this.activeCli = cli;
     this.sessionCwd = options.cwd;
     this.directOptions = options;
+    // connect 시 전달된 sessionId를 즉시 반영 (세션 resume 지원)
+    if (options.sessionId) {
+      this.sessionId = options.sessionId;
+    }
     // direct 모드는 connect 시점에 프로세스를 spawn하지 않지만,
     // SDK 소비자에게 "사용 가능" 상태를 알리기 위해 connected로 설정
     this.directState = 'connected';
@@ -233,6 +237,8 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
     return {
       cli,
       protocol: 'direct',
+      // direct 모드에서도 sessionId를 ConnectResult에 포함 (ACP와 일관된 인터페이스)
+      session: options.sessionId ? { sessionId: options.sessionId } : undefined,
     };
   }
 
@@ -441,6 +447,18 @@ export class UnifiedAgentClient extends EventEmitter implements IUnifiedAgentCli
     });
 
     this.sessionId = sessionId;
+  }
+
+  /**
+   * Direct 모드에서 세션 ID를 외부에서 갱신합니다.
+   * 풀 클라이언트가 재사용될 때 세션 매핑에서 복원된 sessionId를 반영합니다.
+   */
+  setDirectSessionId(sessionId: string): void {
+    if (!this.directOptions) {
+      throw new Error('direct 모드에서만 사용 가능합니다.');
+    }
+    this.sessionId = sessionId;
+    this.directOptions = { ...this.directOptions, sessionId };
   }
 
   /**
