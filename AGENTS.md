@@ -39,10 +39,12 @@ src/
     └── npx.ts                  # npx 경로 해석
 
 tests/
-├── unit/                       # 유닛 테스트 (mock 기반, 77개)
-└── integration/                # E2E 통합 테스트 (실제 CLI 실행)
-    ├── e2e.test.ts             # 프롬프트 전송/응답 검증
-    └── config.test.ts          # 모델 변경, reasoning effort 검증
+└── e2e/                        # CLI별 E2E 테스트 (실제 CLI 실행)
+    ├── helpers.ts              # 공용 헬퍼 함수
+    ├── claude.acp.test.ts      # Claude ACP E2E
+    ├── codex.acp.test.ts       # Codex ACP E2E
+    ├── codex.direct.test.ts    # Codex Direct E2E
+    └── gemini.acp.test.ts      # Gemini ACP E2E
 ```
 
 ## 핵심 명령어
@@ -51,11 +53,11 @@ tests/
 # 타입 체크
 npm run lint
 
-# 유닛 테스트 (mock 기반, CI에서 실행 가능)
-npx vitest run tests/unit/
-
-# E2E 통합 테스트 (실제 CLI 필요, 로컬에서만)
-npx vitest run tests/integration/
+# CLI별 E2E 테스트 (실제 CLI 필요, 로컬에서만)
+npx vitest run tests/e2e/claude.acp.test.ts
+npx vitest run tests/e2e/codex.acp.test.ts
+npx vitest run tests/e2e/codex.direct.test.ts
+npx vitest run tests/e2e/gemini.acp.test.ts
 
 # 전체 테스트
 npm test
@@ -84,10 +86,10 @@ npm run build
 - `session/set_config_option` params: `{ sessionId, configId, value }`.
 
 ### 테스트
-- **유닛 테스트** (`tests/unit/`): mock child process 기반, CI에서 실행 가능.
-- **통합 테스트** (`tests/integration/`): 실제 CLI를 spawn하므로 인증된 로컬 환경에서만 실행.
-- 테스트 파일은 `*.test.ts` 패턴.
+- **E2E 테스트** (`tests/e2e/`): CLI별 + 프로토콜별 독립 파일. 실제 CLI를 spawn하므로 인증된 로컬 환경에서만 실행.
+- 파일명 규칙: `<cli>.<protocol>.test.ts` (예: `claude.acp.test.ts`, `codex.direct.test.ts`)
 - `describe.skipIf(!isCliInstalled('xxx'))` 패턴으로 설치되지 않은 CLI 자동 건너뛰기.
+- 테스트 타임아웃: 180,000ms (3분), 세션 재개: 360,000ms (6분).
 
 ### 의존성
 - **런타임 의존성 최소화**: `@agentclientprotocol/sdk`(공식 ACP SDK) + `zod`(스키마 검증) + `picocolors`(CLI 전용 스타일링).

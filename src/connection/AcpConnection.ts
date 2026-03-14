@@ -28,8 +28,8 @@ import {
   type ReleaseTerminalResponse,
   type WaitForTerminalExitRequest,
   type WaitForTerminalExitResponse,
-  type KillTerminalCommandRequest,
-  type KillTerminalCommandResponse,
+  type KillTerminalRequest,
+  type KillTerminalResponse,
 } from '@agentclientprotocol/sdk';
 import type { ConnectionState } from '../types/common.js';
 import { BaseConnection, type BaseConnectionOptions } from './BaseConnection.js';
@@ -408,7 +408,7 @@ export class AcpConnection extends BaseConnection {
       waitForTerminalExit: async (_params: WaitForTerminalExitRequest): Promise<WaitForTerminalExitResponse> => {
         throw new Error('terminal/wait_for_exit는 현재 지원되지 않습니다');
       },
-      killTerminal: async (_params: KillTerminalCommandRequest): Promise<KillTerminalCommandResponse> => {
+      killTerminal: async (_params: KillTerminalRequest): Promise<KillTerminalResponse> => {
         throw new Error('terminal/kill은 현재 지원되지 않습니다');
       },
     };
