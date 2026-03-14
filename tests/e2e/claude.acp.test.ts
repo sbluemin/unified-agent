@@ -9,6 +9,7 @@ import {
   connectClient,
   sendAndCollect,
   runCli,
+  withTimeout,
   SIMPLE_PROMPT,
   SESSION_REMEMBER_PROMPT,
   SESSION_RECALL_PROMPT,
@@ -65,6 +66,45 @@ describe.skipIf(!installed)('E2E: Claude ACP', () => {
       expect(result.response).toContain('2');
       expect(result.cli).toBe('claude');
       expect(result.sessionId.length).toBeGreaterThan(0);
+    }, 180_000);
+  });
+
+  // ═══════════════════════════════════════════════
+  // Disconnect 후 프로세스 종료
+  // ═══════════════════════════════════════════════
+
+  describe('Disconnect 후 프로세스 종료', () => {
+    it('SDK: 연결 → 프롬프트 → disconnect → 프로세스 종료 및 상태 초기화 검증', async () => {
+      // 최소 모델/effort로 연결
+      const { client: c, sessionId } = await connectClient('claude', { model: 'haiku', effort: 'none' });
+      client = c;
+      expect(sessionId).toBeTruthy();
+
+      // 프롬프트 전송 → 정상 응답 확인
+      const { response } = await sendAndCollect(client, SIMPLE_PROMPT);
+      expect(response).toContain('2');
+
+      // exit 이벤트 감지 준비
+      const exitReceived = new Promise<void>((resolve) => {
+        client!.once('exit', () => resolve());
+      });
+
+      // disconnect → 프로세스 종료
+      await client.disconnect();
+
+      // exit 이벤트 수신 확인 (프로세스가 실제로 종료됨)
+      await withTimeout(exitReceived, 5_000, 'exit 이벤트');
+
+      // 연결 상태 초기화 확인
+      const info = client.getConnectionInfo();
+      expect(info.state).toBe('disconnected');
+      expect(info.cli).toBeNull();
+      expect(info.sessionId).toBeNull();
+
+      // 재전송 시 에러 발생 확인
+      await expect(client.sendMessage(SIMPLE_PROMPT)).rejects.toThrow();
+
+      client = null;
     }, 180_000);
   });
 

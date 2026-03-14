@@ -56,6 +56,36 @@ describe.skipIf(!installed)('E2E: Codex Direct', () => {
   });
 
   // ═══════════════════════════════════════════════
+  // Disconnect 후 상태 초기화
+  // ═══════════════════════════════════════════════
+
+  describe('Disconnect 후 상태 초기화', () => {
+    it('SDK: 연결 → 프롬프트 → disconnect → 상태 초기화 검증', async () => {
+      // 최소 모델로 연결 (Direct 모드)
+      const { client: c } = await connectClient('codex', { direct: true, model: 'gpt-5.3-codex-spark' });
+      client = c;
+
+      // 프롬프트 전송 → 정상 응답 확인
+      const { response } = await sendAndCollect(client, SIMPLE_PROMPT);
+      expect(response).toContain('2');
+
+      // disconnect → 상태 초기화
+      await client.disconnect();
+
+      // 연결 상태 초기화 확인
+      const info = client.getConnectionInfo();
+      expect(info.state).toBe('disconnected');
+      expect(info.cli).toBeNull();
+      expect(info.sessionId).toBeNull();
+
+      // 재전송 시 에러 발생 확인
+      await expect(client.sendMessage(SIMPLE_PROMPT)).rejects.toThrow();
+
+      client = null;
+    }, 180_000);
+  });
+
+  // ═══════════════════════════════════════════════
   // 모델별 프롬프트
   // ═══════════════════════════════════════════════
 
